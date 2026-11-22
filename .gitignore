@@ -1,0 +1,11 @@
+node_modules
+.next
+.env
+.env.local
+*.tsbuildinfo
+.local-db
+.next-build
+.vercel
+.env*
+!.env.example
+.claude/
