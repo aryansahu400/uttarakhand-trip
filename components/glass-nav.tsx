@@ -20,6 +20,22 @@ export function LiquidGlassDefs() {
     const brands = (navigator as Navigator & { userAgentData?: { brands: { brand: string }[] } }).userAgentData?.brands;
     if (brands?.some((b) => /chromium/i.test(b.brand))) document.documentElement.classList.add("refract");
   }, []);
+  // Input modality: browsers may still match :focus-visible on a tab that was tapped (Radix moves focus
+  // programmatically), which left a heavy ring around the tapped tab. `html.using-pointer` lets the nav
+  // hide that ring until the keyboard is used again.
+  useEffect(() => {
+    const html = document.documentElement;
+    const onPointer = () => html.classList.add("using-pointer");
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) html.classList.remove("using-pointer");
+    };
+    window.addEventListener("pointerdown", onPointer, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, []);
   return (
     <svg aria-hidden="true" width="0" height="0" className="pointer-events-none absolute">
       <filter id="liquid-refract" x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
@@ -64,7 +80,9 @@ export function GlassNav({ value, variant }: { value: string; variant: "bar" | "
         "glass",
         side
           ? "flex w-full flex-col gap-1 rounded-2xl p-2"
-          : "fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-1/2 z-30 flex -translate-x-1/2 items-center rounded-full p-1 lg:hidden"
+          : // Below 340px the four fixed-width tabs would touch the screen edges, so the capsule keeps the 16px
+            // page gutter and the tabs share its width instead.
+            "fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-1/2 z-30 flex -translate-x-1/2 items-center rounded-full p-1 max-[339px]:w-[calc(100vw-2rem)] lg:hidden"
       )}
     >
       {side && (
@@ -85,13 +103,18 @@ export function GlassNav({ value, variant }: { value: string; variant: "bar" | "
           value={v}
           data-tab={v}
           className={cn(
-            "relative z-10 flex items-center text-[#3a4e66] outline-none transition-colors [-webkit-tap-highlight-color:transparent] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:font-medium data-[state=active]:text-foreground",
+            // Active: tinted pill (globals.css .glass-pill) + darker, bolder label and thicker icon stroke.
+            // Press: quick scale-down. Focus ring: keyboard only (see LiquidGlassDefs).
+            "nav-trigger group relative z-10 flex select-none items-center text-[#3a4e66] outline-none transition-[color,transform] duration-150 [-webkit-tap-highlight-color:transparent] hover:text-[#0f2238] motion-safe:active:scale-95 focus-visible:ring-2 focus-visible:ring-[#0f2238]/50 focus-visible:ring-offset-0 data-[state=active]:font-semibold data-[state=active]:text-[#0f2238]",
             side
               ? "h-10 w-full gap-3 rounded-xl px-3 text-sm"
-              : "h-14 w-[4.75rem] flex-col justify-center gap-0.5 rounded-full text-[11px]"
+              : "h-14 w-[4.75rem] flex-col justify-center gap-0.5 rounded-full text-[11px] max-[339px]:w-auto max-[339px]:min-w-0 max-[339px]:flex-1"
           )}
         >
-          <Icon className={side ? "h-4 w-4" : "h-5 w-5"} strokeWidth={1.75} />
+          <Icon
+            className={cn(side ? "h-4 w-4" : "h-5 w-5", "[stroke-width:1.75] group-data-[state=active]:[stroke-width:2.4]")}
+            aria-hidden="true"
+          />
           {side ? label : short}
         </T.Trigger>
       ))}

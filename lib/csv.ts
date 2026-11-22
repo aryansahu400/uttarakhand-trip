@@ -1,6 +1,12 @@
-const cell = (v: unknown) => {
-  const s = v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+/**
+ * One CSV cell. Text that a spreadsheet would run as a formula (starts with = + - @ tab or CR) gets a
+ * leading ' so it is shown as text (OWASP CSV injection guidance); real numbers and plain numeric
+ * strings like "-12.50" are left alone. Cells containing a quote, comma, CR or LF are quoted.
+ */
+export const cell = (v: unknown) => {
+  let s = v == null ? "" : String(v);
+  if (typeof v === "string" && /^[=+\-@\t\r]/.test(s) && !/^[+-]?\d+(\.\d+)?$/.test(s)) s = "'" + s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
 /** Downloads rows as a CSV that Excel opens correctly (UTF-8 BOM so ₹ and names survive). */

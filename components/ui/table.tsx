@@ -1,8 +1,11 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export const Table = ({ className, ...p }: React.HTMLAttributes<HTMLTableElement>) => (
-  <div className="w-full overflow-auto"><table className={cn("w-full caption-bottom text-sm", className)} {...p} /></div>
+/** Table in a horizontally scrollable wrapper. `containerClassName` styles that wrapper (e.g. to hide it per breakpoint). */
+export const Table = ({ className, containerClassName, ...p }: React.HTMLAttributes<HTMLTableElement> & { containerClassName?: string }) => (
+  <div className={cn("w-full overflow-auto", containerClassName)}>
+    <table className={cn("w-full caption-bottom text-sm", className)} {...p} />
+  </div>
 );
 export const THead = (p: React.HTMLAttributes<HTMLTableSectionElement>) => <thead className="[&_tr]:border-b" {...p} />;
 export const TBody = (p: React.HTMLAttributes<HTMLTableSectionElement>) => <tbody className="[&_tr:last-child]:border-0" {...p} />;

@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   title: "Uttarakhand Trip Expenses",
   description: "Split trip expenses, track lends and settle up.",
   appleWebApp: { capable: true, title: "Trip expenses", statusBarStyle: "default" },
+  // The standard flag (Chrome warns that apple-mobile-web-app-capable alone is deprecated); Safari keeps the apple one.
+  other: { "mobile-web-app-capable": "yes" },
 };
 
 export const viewport: Viewport = {

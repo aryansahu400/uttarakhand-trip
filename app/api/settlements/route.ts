@@ -2,29 +2,42 @@ import { NextResponse } from "next/server";
 import { desc } from "drizzle-orm";
 import { getDb } from "@/db";
 import { settlements } from "@/db/schema";
-import { settlementSchema } from "@/lib/validate";
-import { requireMember } from "@/lib/session";
+import { firstError, settlementSchema } from "@/lib/validate";
+import { paiseToDecimal, toPaise } from "@/lib/balances";
+import { apiError, methodNotAllowed, readJson, requireMember, withErrors } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export const GET = withErrors("load the settlements", async () => {
   const { error } = await requireMember();
   if (error) return error;
   const db = await getDb();
   const rows = await db.select().from(settlements).orderBy(desc(settlements.createdAt));
   return NextResponse.json(rows);
-}
+});
 
-export async function POST(req: Request) {
+export const POST = withErrors("record the settlement", async (req: Request) => {
   const { member, error } = await requireMember();
   if (error) return error;
-  const db = await getDb();
-  const parsed = settlementSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const json = await readJson(req);
+  if (json.error) return json.error;
+  const parsed = settlementSchema.safeParse(json.body);
+  if (!parsed.success) return apiError(firstError(parsed.error), 400);
   const v = parsed.data;
+  const db = await getDb();
   const [row] = await db
     .insert(settlements)
-    .values({ fromPerson: v.fromPerson, toPerson: v.toPerson, amount: v.amount.toFixed(2), note: v.note || null, createdBy: member.person })
+    .values({
+      fromPerson: v.fromPerson,
+      toPerson: v.toPerson,
+      amount: paiseToDecimal(toPaise(v.amount)),
+      note: v.note || null,
+      createdBy: member.person,
+    })
     .returning();
   return NextResponse.json(row, { status: 201 });
-}
+});
+
+export const PUT = methodNotAllowed(["GET", "POST"]);
+export const PATCH = PUT;
+export const DELETE = PUT;

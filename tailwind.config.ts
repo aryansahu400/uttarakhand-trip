@@ -3,6 +3,8 @@ import type { Config } from "tailwindcss";
 const config: Config = {
   darkMode: ["class"],
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  // hover: styles apply only on devices that really hover, so they don't "stick" after a tap on phones.
+  future: { hoverOnlyWhenSupported: true },
   theme: {
     extend: {
       colors: {
