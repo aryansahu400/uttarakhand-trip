@@ -20,7 +20,7 @@ export async function GET() {
   const { error } = await requireAdmin();
   if (error) return error;
   const db = await getDb();
-  const rows = await db.select({ name: people.name, email: people.email }).from(people).orderBy(people.id);
+  const rows = await db.select({ name: people.name, email: people.email, image: people.image }).from(people).orderBy(people.id);
   return NextResponse.json({ adminEmail: adminEmail() || null, members: rows });
 }
 

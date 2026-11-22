@@ -1,10 +1,21 @@
 import "server-only";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { people } from "@/db/schema";
 import { ADMIN_PERSON, PEOPLE } from "./people";
 
 export type Member = { person: string; isAdmin: boolean };
+
+/** Remember the member's Google photo so others see it too. Never blocks sign-in. */
+export async function savePhoto(person: string, image?: string | null) {
+  if (!image || !/^https:\/\//.test(image)) return;
+  try {
+    const db = await getDb();
+    await db.update(people).set({ image }).where(eq(people.name, person));
+  } catch (e) {
+    console.error("savePhoto failed", e);
+  }
+}
 
 export const adminEmail = () => (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
 

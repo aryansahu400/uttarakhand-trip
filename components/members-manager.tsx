@@ -6,8 +6,9 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ADMIN_PERSON } from "@/lib/people";
+import { Avatar } from "./avatar";
 
-type Row = { name: string; email: string | null };
+type Row = { name: string; email: string | null; image: string | null };
 
 export function MembersManager() {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -57,7 +58,10 @@ export function MembersManager() {
         return (
           <div key={r.name} className="space-y-2 p-4">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">{r.name}</span>
+              <span className="flex items-center gap-2 font-medium">
+                <Avatar name={r.name} src={r.image} size={28} />
+                {r.name}
+              </span>
               {r.email || (isAdminRow && adminEmail) ? (
                 <span className="flex items-center gap-1 text-xs text-emerald-700">
                   <Check className="h-3.5 w-3.5" /> Can sign in

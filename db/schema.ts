@@ -5,6 +5,8 @@ export const people = pgTable("people", {
   name: text("name").notNull().unique(),
   // Google account allowed to sign in as this person (set by the admin on the Members page)
   email: text("email").unique(),
+  // Google profile photo URL, refreshed each time the member signs in
+  image: text("image"),
 });
 
 export const expenses = pgTable(

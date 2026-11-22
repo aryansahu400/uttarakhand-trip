@@ -12,6 +12,7 @@ import { Settlements } from "./settlements";
 import type { Expense, Settlement } from "./types";
 import { MeProvider, type Me } from "./me";
 import { UserChip } from "./user-chip";
+import { PhotosProvider } from "./avatar";
 
 export function AppShell({ me }: { me: Me }) {
   const [tab, setTab] = useState("add");
@@ -40,10 +41,22 @@ export function AppShell({ me }: { me: Me }) {
   }, []);
 
   useEffect(() => { load(); }, [load, tab]); // refetch on tab switch
+
+  // Members' Google photos (filled in as each person signs in)
+  const [photos, setPhotos] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetch("/api/people", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { name: string; image: string | null }[]) =>
+        setPhotos(Object.fromEntries(rows.filter((r) => r.image).map((r) => [r.name, r.image as string])))
+      )
+      .catch(() => {});
+  }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [tab]);
 
   return (
     <MeProvider value={me}>
+    <PhotosProvider value={me.image ? { ...photos, [me.person]: me.image } : photos}>
     <Tabs value={tab} onValueChange={setTab} orientation={isDesktop ? "vertical" : "horizontal"}>
       <LiquidGlassDefs />
       <main className="mx-auto max-w-6xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 sm:pt-8 lg:flex lg:gap-6 lg:pb-16">
@@ -78,6 +91,7 @@ export function AppShell({ me }: { me: Me }) {
       {/* Phones + tablets: floating liquid glass capsule */}
       <GlassNav value={tab} variant="bar" />
     </Tabs>
+    </PhotosProvider>
     </MeProvider>
   );
 }

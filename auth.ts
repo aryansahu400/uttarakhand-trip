@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "./auth.config";
-import { devLoginEnabled, memberForEmail } from "@/lib/members";
+import { devLoginEnabled, memberForEmail, savePhoto } from "@/lib/members";
 import { PEOPLE } from "@/lib/people";
 
 declare module "next-auth" {
@@ -38,7 +38,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user?.email) {
         const m = await memberForEmail(user.email);
-        if (m) Object.assign(token, { person: m.person, isAdmin: m.isAdmin });
+        if (m) {
+          Object.assign(token, { person: m.person, isAdmin: m.isAdmin });
+          await savePhoto(m.person, user.image);
+        }
       }
       return token;
     },

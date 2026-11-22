@@ -15,9 +15,10 @@ export default function PrivacyPage() {
       <h2>What we collect</h2>
       <ul>
         <li>
-          <strong>Your Google account name and email address</strong>, when you sign in with Google. We use them only
-          to check that you are one of the trip members and to show who you are in the app. We do not receive your
-          Google password, contacts, files or any other Google data.
+          <strong>Your Google account name, email address and profile photo</strong>, when you sign in with Google.
+          We use your name and email only to check that you are one of the trip members, and we show your profile
+          photo next to your name so the group can recognise you. We keep a link to the photo (not a copy), updated
+          each time you sign in. We do not receive your Google password, contacts, files or any other Google data.
         </li>
         <li>
           <strong>Trip records you enter</strong>: expense descriptions, amounts, dates, who paid, who shares the cost,
@@ -38,8 +39,8 @@ export default function PrivacyPage() {
 
       <h2>Who can see it</h2>
       <p>
-        All trip members can see the trip records, because splitting costs needs everyone&apos;s entries. Member email
-        addresses are visible only to the organiser.
+        All trip members can see the trip records and each other&apos;s names and profile photos, because splitting
+        costs needs everyone&apos;s entries. Member email addresses are visible only to the organiser.
       </p>
 
       <h2>Where it is stored</h2>

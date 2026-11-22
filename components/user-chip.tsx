@@ -4,6 +4,7 @@ import { LogOut, Users } from "lucide-react";
 import { signOutAction } from "@/app/actions";
 import { cn } from "@/lib/utils";
 import { useMe } from "./me";
+import { Avatar } from "./avatar";
 
 /** Signed-in person + menu (Manage members for the admin, Sign out). */
 export function UserChip({ className, align = "right" }: { className?: string; align?: "left" | "right" }) {
@@ -11,9 +12,7 @@ export function UserChip({ className, align = "right" }: { className?: string; a
   return (
     <details className={cn("group relative", className)}>
       <summary className="glass flex cursor-pointer list-none items-center gap-2 rounded-full py-1 pl-1 pr-3 text-sm [&::-webkit-details-marker]:hidden">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0f2238] text-xs font-semibold text-white">
-          {me.person.slice(0, 1)}
-        </span>
+        <Avatar name={me.person} src={me.image} size={28} />
         <span className="font-medium text-[#0f2238]">{me.person}</span>
         {me.isAdmin && <span className="rounded border border-[#0f2238]/20 px-1 text-[10px] text-[#3a4e66]">Admin</span>}
       </summary>

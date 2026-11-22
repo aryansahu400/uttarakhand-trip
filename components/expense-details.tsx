@@ -5,6 +5,7 @@ import { categoryOf } from "@/lib/categories";
 import { formatDate, formatINR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Expense } from "./types";
+import { PersonName } from "./avatar";
 
 export function Chevron({ open, className }: { open: boolean; className?: string }) {
   return <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-180", className)} />;
@@ -49,7 +50,7 @@ export function ExpenseDetails({ e, children }: { e: Expense; children?: React.R
         <DetailRow label="Date & time">{formatDate(e.dateTime)}</DetailRow>
         <DetailRow label="Category">{categoryOf(e.category).label}</DetailRow>
         <DetailRow label="Type">{trip ? "Trip expense" : "Personal lend"}</DetailRow>
-        <DetailRow label="Added by">{e.createdBy ?? "—"}</DetailRow>
+        <DetailRow label="Added by">{e.createdBy ? <PersonName name={e.createdBy} size={18} /> : "—"}</DetailRow>
         {e.naveenPayment && (
           <DetailRow label="Naveen">{e.naveenPayment === "direct" ? "Direct (paid to him)" : "Indirect (adjusted)"}</DetailRow>
         )}

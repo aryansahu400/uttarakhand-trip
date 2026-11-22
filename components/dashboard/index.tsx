@@ -30,6 +30,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { Expense, Settlement } from "../types";
 import { Chevron, Collapse, ExpenseDetails } from "../expense-details";
+import { Avatar, PersonName } from "../avatar";
 import { C, CumulativeChart, DailySpendChart, Donut, Gauge, MoneyFlow, NetBalanceChart, PersonBarChart } from "./charts";
 
 const TYPE_LABELS: Record<TypeFilter, string> = {
@@ -298,7 +299,7 @@ export function Dashboard({ expenses, settlements }: { expenses: Expense[]; sett
           <TBody>
             {PEOPLE.map((p) => (
               <TR key={p}>
-                <TD className="pl-5 font-medium">{p}</TD>
+                <TD className="pl-5 font-medium"><PersonName name={p} size={22} /></TD>
                 <TD className="text-right tabular-nums">{formatINR(spent[p])}</TD>
                 <TD className="text-right tabular-nums text-muted-foreground">{formatINR(share[p])}</TD>
                 <TD className="text-right tabular-nums text-muted-foreground">
@@ -469,12 +470,15 @@ function PersonView({ expenses, settlements, initial }: { expenses: Expense[]; s
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
-        <div>
-          <CardTitle>Person statement</CardTitle>
-          <p className="text-xs text-muted-foreground">Everything about one person, whole trip</p>
+      <CardHeader className="gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Avatar name={person} size={36} />
+          <div>
+            <CardTitle>Person statement</CardTitle>
+            <p className="text-xs text-muted-foreground">Everything about one person, whole trip</p>
+          </div>
         </div>
-        <Select value={person} onChange={(e) => setPerson(e.target.value)} className="w-36" aria-label="Person">
+        <Select value={person} onChange={(e) => setPerson(e.target.value)} className="w-full sm:w-36" aria-label="Person">
           {PEOPLE.map((p) => <option key={p}>{p}</option>)}
         </Select>
       </CardHeader>
