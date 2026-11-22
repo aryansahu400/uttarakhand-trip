@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { AddExpense } from "./add-expense";
@@ -66,6 +67,11 @@ export function AppShell({ me }: { me: Me }) {
           <TabsContent value="raw"><RawExpenses expenses={expenses} onChanged={load} /></TabsContent>
           <TabsContent value="dash"><Dashboard expenses={expenses} settlements={settlements} /></TabsContent>
           <TabsContent value="settle"><Settlements expenses={expenses} settlements={settlements} onChanged={load} /></TabsContent>
+
+          <footer className="mt-10 flex justify-center gap-4 text-xs text-muted-foreground">
+            <Link href="/privacy" className="hover:text-foreground hover:underline">Privacy policy</Link>
+            <Link href="/terms" className="hover:text-foreground hover:underline">Terms of use</Link>
+          </footer>
         </div>
       </main>
 
