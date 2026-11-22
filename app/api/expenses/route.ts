@@ -6,16 +6,21 @@ import { expenseSchema } from "@/lib/validate";
 import { NAVEEN_PER_PERSON, naveenOverCap } from "@/lib/naveen";
 import { PEOPLE } from "@/lib/people";
 import { formatINR } from "@/lib/format";
+import { requireMember } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const { error } = await requireMember();
+  if (error) return error;
   const db = await getDb();
   const rows = await db.select().from(expenses).orderBy(desc(expenses.dateTime));
   return NextResponse.json(rows);
 }
 
 export async function POST(req: Request) {
+  const { member, error } = await requireMember();
+  if (error) return error;
   const db = await getDb();
   const parsed = expenseSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -45,6 +50,7 @@ export async function POST(req: Request) {
       owedTo: v.type === "personal" ? v.owedTo! : null,
       naveenPayment: v.type === "trip" ? v.naveenPayment ?? null : null,
       category: v.category,
+      createdBy: member.person,
     })
     .returning();
   return NextResponse.json(row, { status: 201 });

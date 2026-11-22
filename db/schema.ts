@@ -3,6 +3,8 @@ import { pgTable, serial, text, numeric, timestamp, jsonb, integer, index } from
 export const people = pgTable("people", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
+  // Google account allowed to sign in as this person (set by the admin on the Members page)
+  email: text("email").unique(),
 });
 
 export const expenses = pgTable(
@@ -20,6 +22,8 @@ export const expenses = pgTable(
     // "direct" = paid to him, "indirect" = we paid hotel/petrol etc. on his behalf (adjusted against his dues)
     naveenPayment: text("naveen_payment", { enum: ["direct", "indirect"] }),
     category: text("category").notNull().default("other"),
+    // Trip member who added this entry (only they, or the admin, can delete it)
+    createdBy: text("created_by"),
   },
   (t) => ({ dateIdx: index("expenses_date_idx").on(t.dateTime) })
 );
@@ -31,6 +35,7 @@ export const settlements = pgTable("settlements", {
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text("created_by"),
 });
 
 export type Expense = typeof expenses.$inferSelect;

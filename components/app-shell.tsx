@@ -9,8 +9,10 @@ import { RawExpenses } from "./raw-expenses";
 import { Dashboard } from "./dashboard";
 import { Settlements } from "./settlements";
 import type { Expense, Settlement } from "./types";
+import { MeProvider, type Me } from "./me";
+import { UserChip } from "./user-chip";
 
-export function AppShell() {
+export function AppShell({ me }: { me: Me }) {
   const [tab, setTab] = useState("add");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
@@ -40,15 +42,18 @@ export function AppShell() {
   useEffect(() => { window.scrollTo(0, 0); }, [tab]);
 
   return (
+    <MeProvider value={me}>
     <Tabs value={tab} onValueChange={setTab} orientation={isDesktop ? "vertical" : "horizontal"}>
       <LiquidGlassDefs />
       <main className="mx-auto max-w-6xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 sm:pt-8 lg:flex lg:gap-6 lg:pb-16">
         {/* Desktop: liquid glass side panel */}
         <aside className="hidden w-52 shrink-0 lg:sticky lg:top-8 lg:block lg:self-start">
           <GlassNav value={tab} variant="side" />
+          <UserChip className="mt-3" align="left" />
         </aside>
 
-        <div className="min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1">
+          <UserChip className="absolute right-3 top-3 z-20 lg:hidden" />
           <header className="relative mb-5 h-32 overflow-hidden rounded-lg border sm:mb-6 sm:h-44">
             <MountainBanner className="absolute inset-0 h-full w-full" />
             <div className="relative px-4 pt-4 sm:px-6 sm:pt-5">
@@ -67,5 +72,6 @@ export function AppShell() {
       {/* Phones + tablets: floating liquid glass capsule */}
       <GlassNav value={tab} variant="bar" />
     </Tabs>
+    </MeProvider>
   );
 }

@@ -9,6 +9,7 @@ export type Expense = {
   owedTo: string | null;
   naveenPayment: "direct" | "indirect" | null;
   category: string;
+  createdBy: string | null;
 };
 export type Settlement = {
   id: number;
@@ -17,4 +18,5 @@ export type Settlement = {
   amount: string;
   note: string | null;
   createdAt: string;
+  createdBy: string | null;
 };

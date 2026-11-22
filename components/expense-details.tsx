@@ -49,6 +49,7 @@ export function ExpenseDetails({ e, children }: { e: Expense; children?: React.R
         <DetailRow label="Date & time">{formatDate(e.dateTime)}</DetailRow>
         <DetailRow label="Category">{categoryOf(e.category).label}</DetailRow>
         <DetailRow label="Type">{trip ? "Trip expense" : "Personal lend"}</DetailRow>
+        <DetailRow label="Added by">{e.createdBy ?? "—"}</DetailRow>
         {e.naveenPayment && (
           <DetailRow label="Naveen">{e.naveenPayment === "direct" ? "Direct (paid to him)" : "Indirect (adjusted)"}</DetailRow>
         )}

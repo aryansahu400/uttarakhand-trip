@@ -2,7 +2,8 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
-import { PEOPLE } from "@/lib/people";
+import { PEOPLE, canDelete } from "@/lib/people";
+import { useMe } from "./me";
 import { formatDate, formatINR } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -17,6 +18,7 @@ import { categoryOf } from "@/lib/categories";
 const splitLabel = (e: Expense) => (e.splitAmong.length === PEOPLE.length ? "split among everyone" : `split among ${e.splitAmong.join(", ")}`);
 
 export function RawExpenses({ expenses, onChanged }: { expenses: Expense[]; onChanged: () => void }) {
+  const me = useMe();
   const [person, setPerson] = useState("");
   const [type, setType] = useState("");
   const [from, setFrom] = useState("");
@@ -49,7 +51,7 @@ export function RawExpenses({ expenses, onChanged }: { expenses: Expense[]; onCh
     if (res.ok) {
       toast.success("Deleted");
       onChanged();
-    } else toast.error("Delete failed");
+    } else toast.error((await res.json().catch(() => null))?.error ?? "Delete failed");
   }
 
   return (
@@ -123,9 +125,13 @@ export function RawExpenses({ expenses, onChanged }: { expenses: Expense[]; onCh
                   <Collapse open={open}>
                     <ExpenseDetails e={e}>
                       <div className="mt-2 flex justify-end">
-                        <Button variant="outline" size="sm" className="text-destructive" onClick={() => del(e.id)} tabIndex={open ? 0 : -1}>
-                          <Trash2 className="h-3.5 w-3.5" /> Delete
-                        </Button>
+                        {canDelete(me, e.createdBy) ? (
+                          <Button variant="outline" size="sm" className="text-destructive" onClick={() => del(e.id)} tabIndex={open ? 0 : -1}>
+                            <Trash2 className="h-3.5 w-3.5" /> Delete
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Only {e.createdBy ?? "the admin"} can delete this</span>
+                        )}
                       </div>
                     </ExpenseDetails>
                   </Collapse>
@@ -167,9 +173,13 @@ export function RawExpenses({ expenses, onChanged }: { expenses: Expense[]; onCh
                   {e.type === "personal" ? e.owedTo : splitLabel(e)}
                 </TD>
                 <TD>
-                  <Button variant="ghost" size="icon" onClick={() => del(e.id)} aria-label="Delete expense">
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  {canDelete(me, e.createdBy) ? (
+                    <Button variant="ghost" size="icon" onClick={() => del(e.id)} aria-label="Delete expense">
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  ) : (
+                    <span className="whitespace-nowrap text-xs text-muted-foreground">by {e.createdBy ?? "—"}</span>
+                  )}
                 </TD>
               </TR>
             ))}

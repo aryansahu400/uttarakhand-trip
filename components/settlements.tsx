@@ -2,7 +2,8 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Trash2 } from "lucide-react";
-import { PEOPLE } from "@/lib/people";
+import { PEOPLE, canDelete } from "@/lib/people";
+import { useMe } from "./me";
 import { computeBalances, settle } from "@/lib/balances";
 import { formatDate, formatINR } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,9 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import type { Expense, Settlement } from "./types";
 
 export function Settlements({ expenses, settlements, onChanged }: { expenses: Expense[]; settlements: Settlement[]; onChanged: () => void }) {
-  const [from, setFrom] = useState<string>(PEOPLE[0]);
-  const [to, setTo] = useState<string>(PEOPLE[1]);
+  const me = useMe();
+  const [from, setFrom] = useState<string>(me.person || PEOPLE[0]);
+  const [to, setTo] = useState<string>(PEOPLE.find((p) => p !== me.person) ?? PEOPLE[1]);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,7 +50,7 @@ export function Settlements({ expenses, settlements, onChanged }: { expenses: Ex
     if (!confirm("Delete this settlement?")) return;
     const res = await fetch(`/api/settlements/${id}`, { method: "DELETE" });
     if (res.ok) (toast.success("Deleted"), onChanged());
-    else toast.error("Delete failed");
+    else toast.error((await res.json().catch(() => null))?.error ?? "Delete failed");
   }
 
   return (
@@ -115,9 +117,13 @@ export function Settlements({ expenses, settlements, onChanged }: { expenses: Ex
                   {formatDate(s.createdAt)}{s.note ? ` · ${s.note}` : ""}
                 </div>
               </div>
-              <Button variant="ghost" size="icon" className="-mr-2 shrink-0" onClick={() => del(s.id)} aria-label="Delete settlement">
-                <Trash2 className="h-4 w-4 text-muted-foreground" />
-              </Button>
+              {canDelete(me, s.createdBy) ? (
+                <Button variant="ghost" size="icon" className="-mr-2 shrink-0" onClick={() => del(s.id)} aria-label="Delete settlement">
+                  <Trash2 className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              ) : (
+                <span className="shrink-0 pt-0.5 text-xs text-muted-foreground">by {s.createdBy ?? "—"}</span>
+              )}
             </li>
           ))}
         </ul>
@@ -133,7 +139,13 @@ export function Settlements({ expenses, settlements, onChanged }: { expenses: Ex
                   <TD>{s.toPerson}</TD>
                   <TD className="whitespace-nowrap text-right tabular-nums">{formatINR(Number(s.amount))}</TD>
                   <TD className="text-muted-foreground">{s.note}</TD>
-                  <TD><Button variant="ghost" size="icon" onClick={() => del(s.id)} aria-label="Delete settlement"><Trash2 className="h-4 w-4 text-destructive" /></Button></TD>
+                  <TD>
+                    {canDelete(me, s.createdBy) ? (
+                      <Button variant="ghost" size="icon" onClick={() => del(s.id)} aria-label="Delete settlement"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    ) : (
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">by {s.createdBy ?? "—"}</span>
+                    )}
+                  </TD>
                 </TR>
               ))}
             </TBody>

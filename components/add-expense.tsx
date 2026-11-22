@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { NAVEEN_PER_PERSON, naveenOverCap, naveenShares, type NaveenMode } from "@/lib/naveen";
 import { formatINR } from "@/lib/format";
 import type { Expense } from "./types";
+import { useMe } from "./me";
 import { CATEGORIES, guessCategory, type Category } from "@/lib/categories";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -24,7 +25,8 @@ export function AddExpense({ onSaved, expenses }: { onSaved: () => void; expense
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [dateTime, setDateTime] = useState(nowLocal);
-  const [paidBy, setPaidBy] = useState("");
+  const me = useMe();
+  const [paidBy, setPaidBy] = useState(me.person);
   const [type, setType] = useState<"trip" | "personal">("trip");
   const [split, setSplit] = useState<string[]>([...PEOPLE]);
   const [owedTo, setOwedTo] = useState("");

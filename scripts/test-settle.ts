@@ -1,5 +1,6 @@
 import { computeBalances, settle } from "../lib/balances";
 import { naveenOverCap, naveenShares } from "../lib/naveen";
+import { canDelete } from "../lib/people";
 const P = ["A", "B", "C"];
 const { net, total } = computeBalances(
   P,
@@ -33,5 +34,13 @@ console.assert(naveenOverCap(N, base, { amount: 2000, type: "trip", splitAmong: 
 const over = naveenOverCap(N, base, { amount: 1500, type: "trip", splitAmong: ["A"], naveenPayment: "indirect" });
 console.assert(over.length === 1 && over[0].person === "A" && over[0].over === 500, "over cap for A only");
 console.assert(naveenOverCap(N, base, { amount: 99999, type: "trip", splitAmong: N, naveenPayment: null }).length === 0, "non-naveen ignored");
+
+// Ownership: only who added it, or the admin
+const krish = { person: "Krish", isAdmin: false };
+const aryan = { person: "Aryan", isAdmin: true };
+console.assert(canDelete(krish, "Krish") === true, "own entry");
+console.assert(canDelete(krish, "Tejas") === false, "someone else's entry");
+console.assert(canDelete(krish, null) === false, "unowned entry: not for non-admin");
+console.assert(canDelete(aryan, "Tejas") === true && canDelete(aryan, null) === true, "admin can delete anything");
 
 console.log("ok", t);
