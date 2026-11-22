@@ -63,6 +63,12 @@ export default async function SignInPage({ searchParams }: { searchParams: { err
               </div>
             </form>
           )}
+
+          <p className="pt-1 text-center text-xs text-muted-foreground">
+            By signing in you agree to the{" "}
+            <a href="/terms" className="underline underline-offset-2">terms of use</a> and{" "}
+            <a href="/privacy" className="underline underline-offset-2">privacy policy</a>.
+          </p>
         </div>
       </div>
     </main>

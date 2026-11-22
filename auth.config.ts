@@ -9,7 +9,7 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request }) {
       const { pathname } = request.nextUrl;
-      if (pathname.startsWith("/signin") || pathname.startsWith("/api/auth")) return true;
+      if (["/signin", "/api/auth", "/privacy", "/terms"].some((p) => pathname.startsWith(p))) return true;
       if (auth?.user) return true;
       if (pathname.startsWith("/api/")) return Response.json({ error: "Sign in required" }, { status: 401 });
       return false; // → redirect to /signin
