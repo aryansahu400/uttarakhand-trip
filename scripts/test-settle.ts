@@ -29,7 +29,7 @@ import { NAVEEN_PER_PERSON_PAISE, naveenOverCap, naveenShares } from "../lib/nav
 import { cell } from "../lib/csv";
 import { PEOPLE, canDelete } from "../lib/people";
 import { formatDate, formatINR, formatINR0, dayKeyIST, dayLabelIST, hourIST } from "../lib/format";
-import { EMPTY_FILTERS, applyFilters, awards, dailySeries, dayKey, kpis, settlementStatus, shareOf, MAX_FILLED_DAYS } from "../lib/analytics";
+import { EMPTY_FILTERS, applyFilters, awards, dailySeries, dayKey, kpis, personalSummary, settlementStatus, shareOf, MAX_FILLED_DAYS } from "../lib/analytics";
 import { expenseSchema, firstError, parseId, settlementSchema } from "../lib/validate";
 import type { Expense, Settlement } from "../components/types";
 
@@ -43,7 +43,8 @@ function assert(cond: unknown, msg: string, ...ctx: unknown[]): asserts cond {
   }
 }
 const big = (_: string, v: unknown) => (typeof v === "bigint" ? `${v}n` : v);
-const eq = (a: unknown, b: unknown, msg: string) => assert(JSON.stringify(a, big) === JSON.stringify(b, big), msg, { got: a, want: b });
+const eq = (a: unknown, b: unknown, msg: string, ctx?: unknown) =>
+  assert(JSON.stringify(a, big) === JSON.stringify(b, big), msg, { got: a, want: b, ...(ctx === undefined ? {} : { ctx }) });
 
 /** Deterministic PRNG (mulberry32) so fuzz failures are reproducible. */
 function rng(seed: number) {
@@ -405,6 +406,10 @@ if (process.env.TEST_TZ_ONLY) {
   eq(a.find((x) => x.title === "Biggest spender")?.winner, "Krish & Krishnam", "tie → co-winners");
   eq(a.find((x) => x.title === "Most frequent payer")?.winner, "Krish & Krishnam", "count tie → co-winners");
   eq(awards([]), [], "no awards without data");
+  // Everyone paid once: "Most frequent payer" would go to all 7, so it is not awarded at all.
+  const everyone = People.map((p) => exp({ amount: 100, paidBy: p }));
+  assert(!awards(everyone).some((x) => x.title === "Most frequent payer"), "no award when all members tie");
+  assert(!awards(everyone).some((x) => x.title === "Biggest spender"), "no spender award when all paid the same");
 }
 
 /* ---------------------------------------------------------------- F23: shareOf */
@@ -415,6 +420,82 @@ if (process.env.TEST_TZ_ONLY) {
   ];
   eq(shareOf(rows, "Krish"), 350, "shareOf is the real share, lends excluded");
   eq(shareOf(rows, "Tejas"), 0, "shareOf for someone not in the split");
+}
+
+/* ---------------------------------------------------------------- Home: personalSummary */
+{
+  // Hand-checked scenario: Aryan pays 700 for everyone; Krish pays 300 split Krish+Tejas;
+  // Shlok lends Aryan 50; Tejas settles 100 to Aryan.
+  const rows = [
+    exp({ amount: 700, paidBy: "Aryan", category: "food", dateTime: "2026-12-18T15:00:00.000Z", createdBy: "Aryan" }),
+    exp({ amount: 300, paidBy: "Krish", splitAmong: ["Krish", "Tejas"], category: "travel", dateTime: "2026-12-19T15:00:00.000Z", createdBy: "Krish" }),
+    exp({ amount: 50, paidBy: "Shlok", type: "personal", owedTo: "Aryan", dateTime: "2026-12-20T15:00:00.000Z", createdBy: "Shlok" }),
+  ];
+  const sts = [stl("Tejas", "Aryan", 100)];
+  const a = personalSummary("Aryan", rows, sts);
+  eq([a.paid, a.share, a.lent, a.borrowed, a.settledPaid, a.settledReceived], [700, 100, 0, 50, 0, 100], "Aryan: breakdown figures");
+  eq(a.net, 450, "Aryan: 700 - 100 - 50 - 100 = 450");
+  eq(a.rounding, 0, "Aryan: breakdown adds up exactly");
+  eq(a.netBeforeSettlements, 550, "Aryan: before the settlement he was owed 550");
+  assert(Math.abs(a.settledPct - (1 - 450 / 550)) < 1e-12, "Aryan: settled share of his balance", a.settledPct);
+  eq(a.getsFrom.reduce((s, t) => s + toPaise(t.amount), 0), toPaise(450), "Aryan: transfers to him add up to his balance");
+  eq(a.paysTo, [], "Aryan pays nobody");
+  eq(a.youOwePersonally, [{ from: "Aryan", to: "Shlok", amount: 50 }], "Aryan owes Shlok 50 personally");
+  // Others' average paid: (300 + 0*5) / 6 = 50; Aryan paid 700 → 650 above, 13x.
+  eq(a.paidVsOthers.avg, 50, "others' average paid");
+  eq(a.paidVsOthers.diff, 650, "difference vs others' average paid");
+  assert(a.paidVsOthers.pct !== null && Math.abs(a.paidVsOthers.pct - 13) < 1e-12, "percent vs others' average", a.paidVsOthers);
+  eq(a.payerRank, 1, "Aryan is the top payer");
+  eq([a.tripCount, a.paidCount, a.added.expenses], [1, 1, 1], "Aryan: counts");
+  eq(a.byCategory.find((c) => c.value === "food")?.amount, 100, "Aryan's share is all food");
+  eq(a.daily.map((d) => d.share), [100], "Aryan's daily share");
+  eq(a.recent.map((r) => r.role), ["borrowed", "paid"], "Aryan's recent activity, newest first");
+  eq(a.recent[1].share, 100, "paid row also carries his share");
+  // Tejas: share 100 (food) + 150 (travel) = 250, settled 100 → owes 150.
+  const t = personalSummary("Tejas", rows, sts);
+  eq([t.paid, t.share, t.settledPaid, t.net], [0, 250, 100, -150], "Tejas: owes 150 after settling 100");
+  eq(t.paysTo.reduce((s, x) => s + toPaise(x.amount), 0), toPaise(150), "Tejas: his transfers add up to what he owes");
+  eq(t.daily.map((d) => d.share), [100, 150], "Tejas: share per day (18, 19 Dec)");
+  eq(t.payerRank, 3, "Tejas ties with the other zero payers behind Aryan and Krish");
+  assert(t.payerRankTied, "Tejas's rank is shared");
+  // Someone in nothing at all.
+  const k = personalSummary("Krishnam", [], []);
+  eq([k.paid, k.share, k.net, k.tripCount, k.settledPct], [0, 0, 0, 0, 1], "empty: nothing to settle");
+  eq(k.paidVsOthers.pct, null, "empty: no percentage against a zero average");
+}
+
+/* ---------------------------------------------------------------- seeded fuzz: personalSummary */
+{
+  for (let i = 0; i < 300; i++) {
+    const rows: Expense[] = Array.from({ length: int(0, 25) }, (_, j) =>
+      rand() < 0.2
+        ? exp({ amount: paiseToDecimal(int(1, 500000)), paidBy: pick(People), type: "personal", owedTo: pick(People), dateTime: `2026-12-${String(int(10, 28))}T${String(int(0, 23)).padStart(2, "0")}:00:00.000Z`, createdBy: pick(People) })
+        : exp({ amount: paiseToDecimal(int(1, 2000000)), paidBy: pick(People), splitAmong: rand() < 0.4 ? [] : subset(People), category: pick(["food", "travel", "stay", "activities", "shopping", "other"]), dateTime: `2026-12-${String(int(10, 28))}T${String(int(0, 23)).padStart(2, "0")}:00:00.000Z`, createdBy: pick(People) })
+    ).filter((e) => !(e.type === "personal" && e.owedTo === e.paidBy));
+    const sts = Array.from({ length: int(0, 4) }, () => stl(pick(People), pick(People), paiseToDecimal(int(1, 300000))));
+    const b = computeBalances(People, rows, sts);
+    let netSum = 0;
+    for (const p of People) {
+      const s = personalSummary(p, rows, sts);
+      const ctx = { i, p };
+      eq(s.net, b.net[p], "home net == computeBalances net", ctx);
+      assert(Math.abs(toPaise(s.rounding)) <= 1, "breakdown is within 1 paisa of the balance", ctx, s.rounding);
+      netSum += toPaise(s.net);
+      eq(s.paysTo.reduce((x, t) => x + toPaise(t.amount), 0), Math.max(0, -toPaise(s.net)), "pays-to adds up to what they owe", ctx);
+      eq(s.getsFrom.reduce((x, t) => x + toPaise(t.amount), 0), Math.max(0, toPaise(s.net)), "gets-from adds up to what they are owed", ctx);
+      const catP = s.byCategory.reduce((x, c) => x + toPaise(c.amount), 0);
+      assert(Math.abs(catP - toPaise(s.share)) <= s.byCategory.length, "category shares add up to the share (±1 paisa each)", ctx);
+      const dayP = s.daily.reduce((x, d) => x + toPaise(d.share), 0);
+      assert(Math.abs(dayP - toPaise(s.share)) <= s.daily.length, "daily shares add up to the share (±1 paisa each)", ctx);
+      const others = People.filter((q) => q !== p);
+      const avgP = Math.round(others.reduce((x, q) => x + toPaise(b.spent[q]), 0) / others.length);
+      eq(toPaise(s.paidVsOthers.avg), avgP, "others' average paid", ctx);
+      assert(s.settledPct >= 0 && s.settledPct <= 1, "settled % in [0,1]", ctx, s.settledPct);
+      assert(s.payerRank >= 1 && s.payerRank <= People.length, "rank in range", ctx);
+      assert(s.recent.length <= 6 && s.recent.every((r, j) => j === 0 || Date.parse(s.recent[j - 1].expense.dateTime) >= Date.parse(r.expense.dateTime)), "recent: newest first, at most 6", ctx);
+    }
+    eq(netSum, 0, "everyone's home balances sum to 0", { i });
+  }
 }
 
 /* ---------------------------------------------------------------- F3/F7/F8: validation */

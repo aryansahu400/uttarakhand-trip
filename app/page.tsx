@@ -18,5 +18,5 @@ export default async function Page({ searchParams }: { searchParams: { tab?: str
   const image = session?.user?.image ?? null;
   // Keeps the stored photo current for people already signed in (no need to sign out and back in).
   await savePhoto(member.person, image);
-  return <AppShell me={{ ...member, image }} initialTab={tab} />;
+  return <AppShell me={{ ...member, image, email: session?.user?.email ?? null }} initialTab={tab} />;
 }

@@ -1,6 +1,6 @@
 import { PEOPLE } from "./people";
 import { CATEGORIES } from "./categories";
-import { computeBalances, personalLends, settle, toPaise, toRupees, tripShareOf, type Transfer } from "./balances";
+import { computeBalances, expenseShares, personalLends, settle, splitMembers, toPaise, toRupees, tripShareOf, type Transfer } from "./balances";
 import { naveenShares } from "./naveen";
 import { dayKeyIST, dayLabelIST, hourIST } from "./format";
 import type { Expense, Settlement } from "@/components/types";
@@ -145,7 +145,10 @@ export function awards(expenses: Expense[]): Award[] {
     const scored = PEOPLE.map((p) => ({ p, v: score(p) }));
     const top = Math.max(...scored.map((s) => s.v));
     if (!(top > 0)) return null;
-    return { p: scored.filter((s) => s.v === top).map((s) => s.p).join(" & "), v: top };
+    const winners = scored.filter((s) => s.v === top);
+    // Everyone tied: nobody stands out, so there is no award.
+    if (winners.length === PEOPLE.length) return null;
+    return { p: winners.map((s) => s.p).join(" & "), v: top };
   };
   const fmt = (paise: number) =>
     new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Math.round(paise / 100) || 0);
@@ -194,5 +197,145 @@ export function personStatement(person: string, expenses: Expense[], settlements
     settledReceived: settledReceived[person] ?? 0,
     naveenPaid: naveen.paid[person] ?? 0,
     expenseCount: expenses.filter((e) => involves(e, person)).length,
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Home screen: everything about one member, whole trip.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** One recent row and what it meant for the member. */
+export type ActivityItem = {
+  expense: Expense;
+  /** paid: a trip expense they paid · share: a trip expense someone else paid · lent / borrowed: a personal lend. */
+  role: "paid" | "share" | "lent" | "borrowed";
+  /** Amount they paid (trip rows they paid), else 0. */
+  paid: number;
+  /** Their exact share of a trip row (0 if they paid but are not in the split), or the lend amount. */
+  share: number;
+};
+
+/** How one figure compares with the average of the OTHER members. pct is null when that average is 0. */
+export type VsOthers = { avg: number; diff: number; pct: number | null };
+
+export type PersonalSummary = ReturnType<typeof personalSummary>;
+
+/**
+ * Personal metrics for the Home screen. Money figures come from computeBalances (paise-exact), so
+ * they match the Dashboard and Settlements to the paisa. `rounding` is the (at most ±₹0.01) gap between
+ * the step-by-step breakdown (paid − share + lent − borrowed + settled paid − settled received), which
+ * uses per-person rounded figures, and the real balance, which is rounded once over everyone.
+ */
+export function personalSummary(person: string, expenses: Expense[], settlements: Settlement[]) {
+  const b = computeBalances([...PEOPLE], expenses, settlements);
+  const before = computeBalances([...PEOPLE], expenses, []);
+  const transfers = settle(b.net);
+  const lends = personalLends(expenses);
+  const naveen = naveenShares(PEOPLE, expenses);
+  const trips = expenses.filter((e) => e.type === "trip");
+  const others = PEOPLE.filter((p) => p !== person);
+  const val = (rec: Record<string, number>, p: string) => rec[p] ?? 0;
+
+  const paid = val(b.spent, person);
+  const share = val(b.share, person);
+  const lent = val(b.lent, person);
+  const borrowed = val(b.borrowed, person);
+  const settledPaid = val(b.settledPaid, person);
+  const settledReceived = val(b.settledReceived, person);
+  const net = val(b.net, person);
+  const stepsP = toPaise(paid) - toPaise(share) + toPaise(lent) - toPaise(borrowed) + toPaise(settledPaid) - toPaise(settledReceived);
+  const rounding = toRupees(toPaise(net) - stepsP);
+
+  // Averages over the other members, summed in paise and rounded once.
+  const avgOthers = (rec: Record<string, number>) =>
+    others.length ? toRupees(Math.round(others.reduce((s, p) => s + toPaise(val(rec, p)), 0) / others.length)) : 0;
+  const vs = (mine: number, avg: number): VsOthers => ({
+    avg,
+    diff: toRupees(toPaise(mine) - toPaise(avg)),
+    pct: avg > 0 ? (mine - avg) / avg : null,
+  });
+  // 1 + number of others strictly ahead; equal amounts share a rank.
+  const rankBy = (rec: Record<string, number>) => 1 + others.filter((p) => toPaise(val(rec, p)) > toPaise(val(rec, person))).length;
+  const tiedBy = (rec: Record<string, number>) => others.some((p) => toPaise(val(rec, p)) === toPaise(val(rec, person)));
+
+  const myTrips = trips.filter((e) => splitMembers(e.splitAmong, PEOPLE).includes(person));
+  const paidTrips = trips.filter((e) => e.paidBy === person);
+  const biggestPaid = paidTrips.reduce<Expense | null>((m, e) => (!m || toPaise(e.amount) > toPaise(m.amount) ? e : m), null);
+
+  // Their share by category (each category exact, rounded once).
+  const byCategory = CATEGORIES.map((c) => ({ ...c, amount: tripShareOf(myTrips.filter((e) => e.category === c.value), PEOPLE, person) }));
+
+  // Their share per IST day, with the same gap rule as dailySeries().
+  const dayRows = new Map<string, Expense[]>();
+  for (const e of myTrips) {
+    const k = dayKey(e.dateTime);
+    dayRows.set(k, [...(dayRows.get(k) ?? []), e]);
+  }
+  const keys = [...dayRows.keys()].sort();
+  const days: string[] = [];
+  if (keys.length) {
+    const first = keys[0], last = keys[keys.length - 1];
+    if (daysBetween(first, last) <= MAX_FILLED_DAYS) for (let k = first; k <= last; k = nextDay(k)) days.push(k);
+    else days.push(...keys);
+  }
+  const daily = days.map((k) => ({ day: k, label: dayLabel(k), share: dayRows.has(k) ? tripShareOf(dayRows.get(k)!, PEOPLE, person) : 0 }));
+  const activeDays = keys.length;
+  const avgPerDay = activeDays ? toRupees(Math.round(toPaise(share) / activeDays)) : 0;
+
+  // Most recent rows that involve them (newest first).
+  const recent: ActivityItem[] = expenses
+    .filter((e) => involves(e, person))
+    .sort((a, c) => Date.parse(c.dateTime) - Date.parse(a.dateTime) || c.id - a.id)
+    .slice(0, 6)
+    .map((e) => {
+      const amount = toRupees(toPaise(e.amount));
+      if (e.type === "personal") return { expense: e, role: e.paidBy === person ? "lent" : "borrowed", paid: 0, share: amount };
+      const mine = expenseShares(e, PEOPLE).find(([p]) => p === person)?.[1] ?? 0;
+      return { expense: e, role: e.paidBy === person ? "paid" : "share", paid: e.paidBy === person ? amount : 0, share: mine };
+    });
+
+  // How much of their original (pre-settlement) balance is cleared. Overpaying past zero counts as cleared.
+  const startP = toPaise(val(before.net, person));
+  const nowP = toPaise(net);
+  const settledPct =
+    startP === 0 ? (nowP === 0 ? 1 : 0) : Math.sign(nowP) === Math.sign(startP) ? Math.min(1, Math.max(0, 1 - Math.abs(nowP) / Math.abs(startP))) : 1;
+
+  return {
+    person,
+    tripTotal: b.total,
+    paid,
+    share,
+    lent,
+    borrowed,
+    settledPaid,
+    settledReceived,
+    net,
+    rounding,
+    netBeforeSettlements: val(before.net, person),
+    settledPct,
+    /** Final settle-up transfers (trip + lends combined) that involve them. */
+    paysTo: transfers.filter((t) => t.from === person),
+    getsFrom: transfers.filter((t) => t.to === person),
+    /** Personal-lend breakdown (already included in the transfers above). */
+    owesYouPersonally: lends.filter((t) => t.to === person),
+    youOwePersonally: lends.filter((t) => t.from === person),
+    naveenPaid: naveen.paid[person] ?? 0,
+    paidVsOthers: vs(paid, avgOthers(b.spent)),
+    shareVsOthers: vs(share, avgOthers(b.share)),
+    payerRank: rankBy(b.spent),
+    payerRankTied: tiedBy(b.spent),
+    shareOfTrip: b.total > 0 ? share / b.total : 0,
+    tripCount: myTrips.length,
+    paidCount: paidTrips.length,
+    biggestPaid,
+    added: { expenses: expenses.filter((e) => e.createdBy === person).length, settlements: settlements.filter((s) => s.createdBy === person).length },
+    byCategory,
+    daily,
+    activeDays,
+    avgPerDay,
+    recent,
+    awards: awards(expenses).filter((a) => a.winner.split(" & ").includes(person)),
+    /** Everyone's paid / share / balance, for the comparison chart. */
+    peers: PEOPLE.map((p) => ({ person: p, paid: val(b.spent, p), share: val(b.share, p), net: val(b.net, p) })),
   };
 }

@@ -23,11 +23,14 @@ export function Settlements({
   settlements,
   onChanged,
   loading = false,
+  prefill = null,
 }: {
   expenses: Expense[];
   settlements: Settlement[];
   onChanged: Reload;
   loading?: boolean;
+  /** A payment to fill in (from Home's "Settle up" / "Record"); a new `key` fills it again. */
+  prefill?: { from: string; to: string; amount: number; key: number } | null;
 }) {
   const me = useMe();
   const [from, setFrom] = useState<string>(me.person || PEOPLE[0]);
@@ -63,6 +66,14 @@ export function Settlements({
     // Fixed id: tapping Use again replaces this toast instead of stacking another one.
     toast.success(`Filled: ${t.from} → ${t.to} ${formatINR(t.amount)}`, { id: "use-suggestion", description: "Check the amount, then tap Add." });
   }
+
+  // Filled from Home: wait a frame so this tab is visible (and laid out) before scrolling to the form.
+  useEffect(() => {
+    if (!prefill) return;
+    const id = requestAnimationFrame(() => applySuggestion(prefill));
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new request (key) should fill the form
+  }, [prefill?.key]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

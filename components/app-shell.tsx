@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { AddExpense } from "./add-expense";
+import { Home } from "./home";
+import type { Transfer } from "@/lib/balances";
 import { GlassNav, LiquidGlassDefs, TABS } from "./glass-nav";
 import { MountainBanner } from "./mountain-banner";
 import { RawExpenses } from "./raw-expenses";
@@ -95,7 +97,8 @@ class DashboardBoundary extends Component<{ children: ReactNode; onRetry: () => 
 
 export type TabValue = (typeof TABS)[number]["value"];
 const TAB_VALUES = TABS.map((t) => t.value) as readonly string[];
-const parseTab = (v: string | null | undefined): TabValue => (v && TAB_VALUES.includes(v) ? (v as TabValue) : "add");
+/** Home is the landing tab: no ?tab= (or an unknown one) opens it. */
+const parseTab = (v: string | null | undefined): TabValue => (v && TAB_VALUES.includes(v) ? (v as TabValue) : "home");
 
 /** Don't refetch on focus/visibility more often than this (both events usually fire together). */
 const REFOCUS_MIN_MS = 5_000;
@@ -116,7 +119,7 @@ class AuthError extends Error {
   }
 }
 
-/** `initialTab` is the raw ?tab= value from the server render; unknown values fall back to "add". */
+/** `initialTab` is the raw ?tab= value from the server render; missing or unknown values open Home. */
 export function AppShell({ me, initialTab }: { me: Me; initialTab?: string }) {
   const [tab, setTabState] = useState<TabValue>(() => parseTab(initialTab));
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -236,7 +239,7 @@ export function AppShell({ me, initialTab }: { me: Me; initialTab?: string }) {
       if (v === tabRef.current) return;
       showTab(v);
       const url = new URL(window.location.href);
-      if (v === "add") url.searchParams.delete("tab");
+      if (v === "home") url.searchParams.delete("tab");
       else url.searchParams.set("tab", v);
       // Push (not replace) so the browser Back button walks back through tabs.
       window.history.pushState(null, "", url);
@@ -285,6 +288,17 @@ export function AppShell({ me, initialTab }: { me: Me; initialTab?: string }) {
       .catch(() => {});
   }, []);
 
+  // Home's "Settle up" / "Record" buttons: switch to Settlements with that payment filled in. The key makes
+  // a repeat tap on the same payment fill (and scroll to) the form again.
+  const [prefill, setPrefill] = useState<(Transfer & { key: number }) | null>(null);
+  const settleWith = useCallback(
+    (t: Transfer) => {
+      setTab("settle");
+      setPrefill({ ...t, key: Date.now() });
+    },
+    [setTab]
+  );
+
   const loading = !loaded;
   // Every panel stays mounted (forceMount) so half-typed forms, filters and expanded rows survive tab
   // switches; Radix marks inactive panels with the `hidden` attribute, which removes them from layout.
@@ -319,6 +333,9 @@ export function AppShell({ me, initialTab }: { me: Me; initialTab?: string }) {
             </div>
           </header>
 
+          <TabsContent value="home" forceMount className={panel}>
+            <Home expenses={expenses} settlements={settlements} loading={loading} onNavigate={setTab} onSettle={settleWith} />
+          </TabsContent>
           <TabsContent value="add" forceMount className={panel}>
             <AddExpense onSaved={load} expenses={expenses} loading={loading} />
           </TabsContent>
@@ -343,7 +360,7 @@ export function AppShell({ me, initialTab }: { me: Me; initialTab?: string }) {
             )}
           </TabsContent>
           <TabsContent value="settle" forceMount className={panel}>
-            <Settlements expenses={expenses} settlements={settlements} onChanged={load} loading={loading} />
+            <Settlements expenses={expenses} settlements={settlements} onChanged={load} loading={loading} prefill={prefill} />
           </TabsContent>
 
           {/* Links keep a 40px-tall hit area for thumbs while the text stays small. */}

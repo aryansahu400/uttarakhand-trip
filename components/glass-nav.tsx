@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as T from "@radix-ui/react-tabs";
-import { ArrowLeftRight, ChartColumn, List, Mountain, Plus } from "lucide-react";
+import { ArrowLeftRight, ChartColumn, House, List, Mountain, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const TABS = [
+  { value: "home", label: "Home", short: "Home", icon: House },
   { value: "add", label: "Add expense", short: "Add", icon: Plus },
   { value: "raw", label: "Expenses", short: "Expenses", icon: List },
   { value: "dash", label: "Dashboard", short: "Dashboard", icon: ChartColumn },
@@ -80,9 +81,9 @@ export function GlassNav({ value, variant }: { value: string; variant: "bar" | "
         "glass",
         side
           ? "flex w-full flex-col gap-1 rounded-2xl p-2"
-          : // Below 340px the four fixed-width tabs would touch the screen edges, so the capsule keeps the 16px
-            // page gutter and the tabs share its width instead.
-            "fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-1/2 z-30 flex -translate-x-1/2 items-center rounded-full p-1 max-[339px]:w-[calc(100vw-2rem)] lg:hidden"
+          : // Five tabs share the capsule's width; it keeps the 16px page gutter on small phones and stops
+            // growing at 23rem so the tabs stay a thumb's width apart on big phones and tablets.
+            "fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-1/2 z-30 flex w-[calc(100vw-2rem)] max-w-[23rem] -translate-x-1/2 items-center rounded-full p-1 lg:hidden"
       )}
     >
       {side && (
@@ -108,14 +109,14 @@ export function GlassNav({ value, variant }: { value: string; variant: "bar" | "
             "nav-trigger group relative z-10 flex select-none items-center text-[#3a4e66] outline-none transition-[color,transform] duration-150 [-webkit-tap-highlight-color:transparent] hover:text-[#0f2238] motion-safe:active:scale-95 focus-visible:ring-2 focus-visible:ring-[#0f2238]/50 focus-visible:ring-offset-0 data-[state=active]:font-semibold data-[state=active]:text-[#0f2238]",
             side
               ? "h-10 w-full gap-3 rounded-xl px-3 text-sm"
-              : "h-14 w-[4.75rem] flex-col justify-center gap-0.5 rounded-full text-[11px] max-[339px]:w-auto max-[339px]:min-w-0 max-[339px]:flex-1"
+              : "h-14 min-w-0 flex-1 flex-col justify-center gap-0.5 rounded-full text-[11px] max-[359px]:text-[10px]"
           )}
         >
           <Icon
             className={cn(side ? "h-4 w-4" : "h-5 w-5", "[stroke-width:1.75] group-data-[state=active]:[stroke-width:2.4]")}
             aria-hidden="true"
           />
-          {side ? label : short}
+          <span className="max-w-full truncate px-0.5">{side ? label : short}</span>
         </T.Trigger>
       ))}
     </T.List>
