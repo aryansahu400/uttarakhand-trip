@@ -216,7 +216,9 @@ function DashboardBody({ expenses, settlements }: { expenses: Expense[]; settlem
           date inputs to ~135px even on wide screens. Same padding and gaps as the Expenses tab. */}
       <Card>
         <CardContent className="space-y-3 pt-5">
-          <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-3">
+          {/* 2 columns until md: in a 3-column grid at 640-688px the date fields get narrower than Chrome's
+              date text + calendar icon, which then slides under the clear (×) button. */}
+          <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-3">
             <Field label="Person">
               <Select value={f.person} onChange={(e) => set({ person: e.target.value })}>
                 <option value="">All people</option>
@@ -228,7 +230,7 @@ function DashboardBody({ expenses, settlements }: { expenses: Expense[]; settlem
                 {Object.entries(TYPE_OPTIONS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </Select>
             </Field>
-            <Field label="Category" className="col-span-2 sm:col-span-1">
+            <Field label="Category" className="col-span-2 md:col-span-1">
               <Select value={f.category} onChange={(e) => set({ category: e.target.value })}>
                 <option value="">All categories</option>
                 {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -236,7 +238,7 @@ function DashboardBody({ expenses, settlements }: { expenses: Expense[]; settlem
             </Field>
             <DateField label="From" value={f.from} onChange={(v) => set({ from: v })} className="max-[359px]:col-span-2" />
             <DateField label="To" value={f.to} onChange={(v) => set({ to: v })} className="max-[359px]:col-span-2" />
-            <ExportMenu onExport={exportCSV} className="col-span-2 sm:col-span-1" />
+            <ExportMenu onExport={exportCSV} className="col-span-2 md:col-span-1" />
           </div>
           {chips.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
@@ -587,7 +589,7 @@ function DashboardSkeleton() {
     <div className="space-y-4 sm:space-y-6" aria-busy="true">
       <p className="sr-only" role="status">Loading dashboard…</p>
       <Card>
-        <CardContent className="grid grid-cols-2 gap-3 pt-5 sm:grid-cols-3">
+        <CardContent className="grid grid-cols-2 gap-3 pt-5 md:grid-cols-3">
           {Array.from({ length: 6 }, (_, i) => (
             <div key={i} className="space-y-1">
               <div className={cn(bar, "h-3 w-12")} />

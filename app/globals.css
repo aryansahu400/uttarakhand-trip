@@ -26,6 +26,36 @@
   * { @apply border-border; }
   html { color-scheme: light; }
   body { @apply bg-background text-foreground antialiased; font-feature-settings: "cv11", "ss01"; }
+
+  /* Date fields must never be wider than their grid column (harmless everywhere). */
+  input:is([type="date"], [type="datetime-local"]) {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /*
+   * iOS / iPadOS only (-webkit-touch-callout is supported by iOS WebKit and by no other engine).
+   * iOS gives date fields the native "menulist-button" appearance, and when the width is not a
+   * fixed length (ours is 100%) WebKit's RenderThemeIOS then forces
+   *   - min-width = width of the longest localized date  -> the field pokes out of its column, and
+   *   - box-sizing: content-box                          -> padding + border are added on top of our
+   *     44px height (~62px) and of width: 100% (+26px),
+   * while its UA sheet centres the value (::-webkit-date-and-time-value { text-align: center }).
+   * With appearance: none, RenderTheme::adjustStyle returns before those adjustments, so our width,
+   * height and border-box sizing apply again; tapping still opens the native date wheel.
+   * Scoped to iOS so every other browser keeps exactly its native rendering.
+   */
+  @supports (-webkit-touch-callout: none) {
+    input:is([type="date"], [type="datetime-local"]) {
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    /* Separate rule: a selector list containing an unknown pseudo-element would be dropped entirely. */
+    input:is([type="date"], [type="datetime-local"])::-webkit-date-and-time-value {
+      text-align: left;
+    }
+  }
 }
 
 /* ---------- Liquid glass ---------- */
