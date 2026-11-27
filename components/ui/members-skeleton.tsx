@@ -1,12 +1,13 @@
 import { Card } from "./card";
 import { Skeleton } from "./skeleton";
+import { PEOPLE } from "@/lib/people";
 
 /**
  * Placeholder for the Members list: one card with a row per member, shaped like the real rows
  * (avatar + name + status, then the email field and Save button), so nothing jumps when the
  * list arrives. Shared by app/members/loading.tsx (route loading) and MembersManager (data loading).
  */
-export function MembersSkeleton({ rows = 7 }: { rows?: number }) {
+export function MembersSkeleton({ rows = PEOPLE.length }: { rows?: number }) {
   return (
     <Card className="divide-y" role="status" aria-label="Loading members" aria-busy>
       {Array.from({ length: rows }, (_, i) => (

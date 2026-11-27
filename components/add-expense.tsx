@@ -215,7 +215,8 @@ export function AddExpense({ onSaved, expenses, loading = false }: { onSaved: Re
                     <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setSplit([])}>None</Button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {/* 10 people: 2 per row on phones and in the two-column desktop form, 5 per row on tablets (no half-empty last row). */}
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-5 lg:grid-cols-2">
                   {PEOPLE.map((p) => (
                     <label key={p} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border bg-card px-3 text-sm transition-colors [-webkit-tap-highlight-color:transparent] hover:bg-muted/60 active:bg-muted lg:min-h-9">
                       <Checkbox checked={split.includes(p)} onCheckedChange={() => toggle(p)} />

@@ -19,7 +19,12 @@ import { categoryOf } from "@/lib/categories";
 const uniq = (a: string[]) => [...new Set(a)];
 const splitLabel = (e: Expense) => {
   const s = uniq(e.splitAmong);
-  return s.length === PEOPLE.length ? "split among everyone" : `split among ${s.join(", ")}`;
+  const left = PEOPLE.filter((p) => !s.includes(p));
+  if (!s.length || !left.length) return "split among everyone"; // an empty list also means everyone
+  // With 10 members, "everyone except Amisha" is shorter than nine names and shows who is left out.
+  if (left.length < s.length && s.every((p) => (PEOPLE as readonly string[]).includes(p)))
+    return `split among everyone except ${left.join(", ")}`;
+  return `split among ${s.join(", ")}`;
 };
 const who = (e: Expense) => (e.type === "personal" ? `${e.paidBy} lent to ${e.owedTo}` : `${e.paidBy} paid · ${splitLabel(e)}`);
 

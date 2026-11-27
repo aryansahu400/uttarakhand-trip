@@ -1,3 +1,5 @@
+import { PEOPLE } from "./people";
+
 export type ExpenseLite = {
   amount: number | string;
   paidBy: string;
@@ -16,9 +18,10 @@ export type Transfer = { from: string; to: string; amount: number };
  * (which always favours/penalises the same people), every share is kept EXACT as an integer number of
  * "units", where 1 paisa = UNITS_PER_PAISA units:
  *
- *   UNITS_PER_PAISA = 420 = lcm(1..7)   →   P * 420 / n is an integer for every split size n ≤ 7.
+ *   UNITS_PER_PAISA = lcm(1..MAX_SPLIT)   →   P * UNITS_PER_PAISA / n is an integer for every split
+ *   size n ≤ MAX_SPLIT, where MAX_SPLIT = PEOPLE.length (10 people → lcm(1..10) = 2520).
  *
- * Validation restricts split names to PEOPLE (7 people) and removes duplicates, so n ≤ 7 always holds
+ * Validation restricts split names to PEOPLE and removes duplicates, so n ≤ MAX_SPLIT always holds
  * for new rows. If an old row somehow has more distinct names (unknown names), the scale becomes
  * lcm(1..maxN) instead (see unitScale), which keeps every share exact. All unit maths uses BigInt so
  * no scale can overflow.
@@ -30,8 +33,8 @@ export type Transfer = { from: string; to: string; amount: number };
  * The Naveen cap SQL (app/api/expenses/naveen-insert.ts) uses the same units formula.
  * ---------------------------------------------------------------------------------------------- */
 
-/** Units per paisa for any split of at most 7 people: lcm(1..7). */
-export const UNITS_PER_PAISA = 420;
+/** The most people a validated split can have: every trip member. */
+export const MAX_SPLIT: number = PEOPLE.length;
 
 /** Rupees (number or a numeric(12,2) string from the DB) -> integer paise. */
 export const toPaise = (v: number | string) => {
@@ -84,7 +87,7 @@ const gcd = (a: bigint, b: bigint): bigint => {
   return a;
 };
 const lcmCache: bigint[] = [1n, 1n];
-/** lcm(1..n) as a BigInt (420n for n ≤ 7). */
+/** lcm(1..n) as a BigInt (lcm(1..7) = 420n, lcm(1..10) = 2520n). */
 export function lcmUpTo(n: number): bigint {
   for (let k = lcmCache.length; k <= n; k++) {
     const prev = lcmCache[k - 1];
@@ -93,13 +96,16 @@ export function lcmUpTo(n: number): bigint {
   return lcmCache[Math.max(1, n)];
 }
 
+/** Units per paisa for any split of the trip members: lcm(1..MAX_SPLIT), 2520 for 10 people. */
+export const UNITS_PER_PAISA = Number(lcmUpTo(MAX_SPLIT));
+
 /**
- * Units per paisa for a set of split sizes: lcm(1..max(7, largest n)). This is exactly
- * UNITS_PER_PAISA (420) whenever every split has at most 7 distinct people (always true for
+ * Units per paisa for a set of split sizes: lcm(1..max(MAX_SPLIT, largest n)). This is exactly
+ * UNITS_PER_PAISA whenever every split has at most MAX_SPLIT distinct people (always true for
  * validated rows); larger only for legacy rows with unknown names, and still exact.
  */
 export function unitScale(splitSizes: Iterable<number>): bigint {
-  let max = 7;
+  let max = MAX_SPLIT;
   for (const n of splitSizes) if (n > max) max = n;
   return lcmUpTo(max);
 }

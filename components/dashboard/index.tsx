@@ -171,7 +171,7 @@ function DashboardBody({ expenses, settlements }: { expenses: Expense[]; settlem
       ? { label: f.person ? `${f.person}'s share` : "Average per person", value: "–", sub: "Lends aren't split" }
       : f.person
         ? { label: `${f.person}'s share`, value: formatINR0(personShare), sub: "Their split of the trip expenses shown" }
-        : { label: "Average per person", value: formatINR0(tripK.share), sub: "Trip total ÷ 7" };
+        : { label: "Average per person", value: formatINR0(tripK.share), sub: `Trip total ÷ ${PEOPLE.length}` };
 
   function exportCSV(kind: ExportKind) {
     const stamp = dayKey(new Date());

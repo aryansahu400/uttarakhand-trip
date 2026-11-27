@@ -8,6 +8,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { AddExpense } from "./add-expense";
 import { Home } from "./home";
 import type { Transfer } from "@/lib/balances";
+import { PEOPLE } from "@/lib/people";
 import { GlassNav, LiquidGlassDefs, TABS } from "./glass-nav";
 import { MountainBanner } from "./mountain-banner";
 import { RawExpenses } from "./raw-expenses";
@@ -327,7 +328,7 @@ export function AppShell({ me, initialTab }: { me: Me; initialTab?: string }) {
               <div className="relative min-w-0 flex-1">
                 {/* One line each at every width (the chip shrinks first, see UserChip); truncate is a last resort. */}
                 <h1 className="truncate text-xl font-semibold tracking-tight text-[#0f2238] sm:text-2xl">Uttarakhand trip</h1>
-                <p className="truncate text-sm text-[#3a4e66]">18 December · 7 people</p>
+                <p className="truncate text-sm text-[#3a4e66]">18 December · {PEOPLE.length} people</p>
               </div>
               <UserChip className="-mr-1 -mt-1 shrink-0 lg:hidden" closeSignal={tab} />
             </div>

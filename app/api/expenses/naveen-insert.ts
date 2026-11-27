@@ -1,4 +1,5 @@
 import { sql, type SQL } from "drizzle-orm";
+import { MAX_SPLIT } from "@/lib/balances";
 import { NAVEEN_PER_PERSON_PAISE } from "@/lib/naveen";
 
 /**
@@ -20,8 +21,9 @@ import { NAVEEN_PER_PERSON_PAISE } from "@/lib/naveen";
  * - PGlite (local dev): db.transaction().
  *
  * Cap maths (must match lib/naveen.ts naveenPaidUnits): exact integer "units", 1 paisa = L units with
- * L = lcm(1..max(7, largest split)) = 420 for every split of ≤ 7 people. A payment of P paise split
- * between n distinct members (empty split = everyone) adds P * L / n units to each — exact, no rounding.
+ * L = lcm(1..max(MAX_SPLIT, largest split)) = 2520 for every split of the 10 trip members. A payment
+ * of P paise split between n distinct members (empty split = everyone) adds P * L / n units to each —
+ * exact, no rounding.
  * Someone is over the cap when their total exceeds 2,100,000 * L units (no tolerance).
  * scripts/test-settle.ts fuzzes this SQL against the JS version on an in-memory PGlite.
  */
@@ -82,11 +84,11 @@ export function naveenConditionalInsert(v: NewNaveenExpense, roster: readonly st
       sized AS (
         SELECT rid, paise, name, count(*) OVER (PARTITION BY rid) AS n FROM members
       ),
-      lcm_upto(k, l) AS (                    -- l = lcm(1..k); stops at max(7, largest split) → 420
+      lcm_upto(k, l) AS (                    -- l = lcm(1..k); stops at max(MAX_SPLIT, largest split) → 2520
         SELECT 1, 1::numeric
         UNION ALL
         SELECT k + 1, lcm(l, (k + 1)::numeric) FROM lcm_upto
-         WHERE k < (SELECT greatest(7, coalesce(max(n), 0)) FROM sized)
+         WHERE k < (SELECT greatest(${MAX_SPLIT}::int, coalesce(max(n), 0)) FROM sized)
       ),
       scale AS (
         SELECT l FROM lcm_upto ORDER BY k DESC LIMIT 1

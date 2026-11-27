@@ -10,9 +10,11 @@
  * Includes seeded fuzz/property tests (set SEED=... to reproduce a different run) and a parity fuzz of
  * the SQL Naveen-cap insert against the JS cap check, on an in-memory PGlite database.
  */
+import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
+  MAX_SPLIT,
   UNITS_PER_PAISA,
   computeBalances,
   expenseShares,
@@ -23,6 +25,7 @@ import {
   splitMembers,
   splitPaise,
   toPaise,
+  unitScale,
   type ExpenseLite,
 } from "../lib/balances";
 import { NAVEEN_PER_PERSON_PAISE, naveenOverCap, naveenShares } from "../lib/naveen";
@@ -67,6 +70,8 @@ const subset = (xs: readonly string[]) => {
 };
 const sumP = (m: Record<string, number>) => Object.values(m).reduce((s, v) => s + toPaise(v), 0);
 const People = [...PEOPLE];
+/** The original seven members (Riya, Rashi and Amisha joined later): older expenses are split among them. */
+const Seven = People.slice(0, 7);
 
 let nextId = 1;
 const exp = (p: Omit<Partial<Expense>, "amount"> & { amount: string | number; paidBy: string }): Expense => ({
@@ -94,9 +99,9 @@ const stl = (fromPerson: string, toPerson: string, amount: number | string): Set
 /** Turn suggested transfers into recorded settlements. */
 const record = (ts: { from: string; to: string; amount: number }[]) => ts.map((t) => stl(t.from, t.to, t.amount));
 
-/* ---------------------------------------------------------------- independent exact oracles (units = paise * 420) */
+/* ---------------------------------------------------------------- independent exact oracles (units = paise * UNITS_PER_PAISA = 2520) */
 const U = BigInt(UNITS_PER_PAISA);
-const members7 = (split: readonly string[]) => [...new Set(split.length ? split : People)];
+const membersOf = (split: readonly string[]) => [...new Set(split.length ? split : People)];
 /** Exact net per person in units, written independently of lib/balances. */
 function exactNetUnits(rows: ExpenseLite[], settlements: { fromPerson: string; toPerson: string; amount: number | string }[]) {
   const m: Record<string, bigint> = Object.fromEntries(People.map((p) => [p, 0n]));
@@ -109,7 +114,7 @@ function exactNetUnits(rows: ExpenseLite[], settlements: { fromPerson: string; t
       add(e.owedTo, -u);
       continue;
     }
-    const mem = members7(e.splitAmong);
+    const mem = membersOf(e.splitAmong);
     add(e.paidBy, u);
     for (const p of mem) add(p, -u / BigInt(mem.length));
   }
@@ -124,7 +129,7 @@ function exactNaveenUnits(rows: { amount: number | string; type: string; splitAm
   const m: Record<string, bigint> = Object.fromEntries(People.map((p) => [p, 0n]));
   for (const e of rows) {
     if (e.type !== "trip" || !e.naveenPayment) continue;
-    const mem = members7(e.splitAmong);
+    const mem = membersOf(e.splitAmong);
     for (const p of mem) m[p] = (m[p] ?? 0n) + (BigInt(toPaise(e.amount)) * U) / BigInt(mem.length);
   }
   return m;
@@ -182,15 +187,27 @@ const absB = (x: bigint) => (x < 0n ? -x : x);
 /* ---------------------------------------------------------------- F2: regression cases from QA */
 {
   // splitPaise (single-expense whole-paise parts, used only for exactSum display) still sums exactly.
-  const parts = splitPaise(10000, splitMembers([], People));
+  const parts = splitPaise(10000, splitMembers(Seven, People));
   eq(parts.map(([, v]) => v), [1429, 1429, 1429, 1429, 1428, 1428, 1428], "100 / 7 whole-paise parts");
+  eq(splitPaise(10000, splitMembers([], People)).map(([, v]) => v), Array(10).fill(1000), "100 / everyone (10) whole-paise parts");
   // Balances use the exact share 100/7 = 14.2857… for everyone (no one is charged the extra paise).
-  const b = computeBalances(People, [exp({ amount: 100, paidBy: "Aryan" })], []);
+  const b = computeBalances(People, [exp({ amount: 100, paidBy: "Aryan", splitAmong: Seven })], []);
   assert(sumP(b.net) === 0, "100/7 nets sum to 0", b.net);
-  assert(People.every((p) => b.share[p] === 14.29), "100/7 shares: exact 14.2857 shown as 14.29 for all", b.share);
+  assert(Seven.every((p) => b.share[p] === 14.29), "100/7 shares: exact 14.2857 shown as 14.29 for all", b.share);
+  assert(["Riya", "Rashi", "Amisha"].every((p) => b.share[p] === 0 && b.net[p] === 0), "a split of the original seven leaves the new members out", b);
   const t = settle(b.net);
-  const cleared = computeBalances(People, [exp({ amount: 100, paidBy: "Aryan" })], record(t));
+  const cleared = computeBalances(People, [exp({ amount: 100, paidBy: "Aryan", splitAmong: Seven })], record(t));
   assert(Object.values(cleared.net).every((v) => v === 0 && !Object.is(v, -0)), "100/7 fully cleared, no -0", cleared.net);
+  // 8, 9 and 10-way splits (possible now there are 10 members) are exact too: lcm(1..10) = 2520 units per paisa.
+  eq([MAX_SPLIT, UNITS_PER_PAISA, unitScale([10])], [10, 2520, 2520n], "the unit scale covers every split of the 10 members");
+  for (const n of [8, 9, 10]) {
+    const rows = [exp({ amount: 100, paidBy: "Riya", splitAmong: People.slice(0, n) })];
+    const bn = computeBalances(People, rows, []);
+    assert(sumP(bn.net) === 0, `100/${n} nets sum to 0`, bn.net);
+    const exactU = exactNetUnits(rows, []);
+    People.forEach((p) => assert(absB(BigInt(toPaise(bn.net[p])) * U - exactU[p]) < U, `100/${n} net within 1 paisa of exact`, p));
+    eq(settle(computeBalances(People, rows, record(settle(bn.net))).net), [], `100/${n} clears after recording`);
+  }
 
   // Rs 1000 paid by Aryan split 3 ways: exact share 333.333… each; nets rounded once, sum-preserving.
   const e3 = [exp({ amount: 1000, paidBy: "Aryan", splitAmong: ["Aryan", "Krish", "Tejas"] })];
@@ -231,7 +248,8 @@ const absB = (x: bigint) => (x < 0n ? -x : x);
   assert(naveenOverCap(People, [], nv(63000, ["Aryan", "Krish", "Tejas"])).length === 0, "63000 / 3 allowed");
   assert(naveenOverCap(People, [], nv(63000.01, ["Aryan", "Krish", "Tejas"])).length === 3, "63000.01 / 3 rejected (each 1/3 paisa over, no tolerance)");
   assert(naveenOverCap(People, [], nv(63000.03, ["Aryan", "Krish", "Tejas"])).length === 3, "63000.03 / 3 rejected");
-  assert(naveenOverCap(People, all, nv(0.07, People)).length === 7, "0.07 / 7 on a full cap rejected");
+  assert(naveenOverCap(People, all, nv(0.07, Seven)).length === 7, "0.07 / 7 on a full cap rejected");
+  assert(naveenOverCap(People, all, nv(0.1, People)).length === 10, "0.10 / 10 on a full cap rejected");
   assert(naveenOverCap(People, all, nv(0.02, ["Aryan", "Krish", "Tejas"])).length === 3, "0.02 / 3 on a full cap: all three charged 0.0067 → rejected");
   eq(naveenOverCap(People, all, nv(0.02, ["Aryan", "Krish", "Tejas"]))[0].over, 0.01, "fractional overage rounds UP to 0.01 (never ₹0)");
   assert(naveenOverCap(People, all.slice(1), nv(0.01, ["Aryan"])).length === 0, "others full, Aryan still has room");
@@ -244,16 +262,22 @@ const absB = (x: bigint) => (x < 0n ? -x : x);
   const seq = (n: number, amount: number, split: string[]) => Array.from({ length: n }, () => exp({ amount, paidBy: "Aryan", splitAmong: split, naveenPayment: "direct" }));
   const three = ["Aryan", "Krish", "Tejas"];
   const four = ["Aryan", "Krish", "Tejas", "Anshul"];
+  const eight = People.slice(0, 8);
+  const nine = People.slice(0, 9);
   const cases: [string, Expense[], number, string[]][] = [
-    ["14 x 10000 + 7000 split 7", seq(14, 10000, People), 7000, People],
-    ["7 x 20000 + 7000 split 7", seq(7, 20000, People), 7000, People],
-    ["29 x 5000 + 2000 split 7", seq(29, 5000, People), 2000, People],
-    ["4 x 35000 + 7000 split 7", seq(4, 35000, People), 7000, People],
+    ["14 x 10000 + 7000 split 7", seq(14, 10000, Seven), 7000, Seven],
+    ["7 x 20000 + 7000 split 7", seq(7, 20000, Seven), 7000, Seven],
+    ["29 x 5000 + 2000 split 7", seq(29, 5000, Seven), 2000, Seven],
+    ["4 x 35000 + 7000 split 7", seq(4, 35000, Seven), 7000, Seven],
     ["63000 split 3 as 3 x 21000/3", seq(2, 21000, three), 21000, three],
     ["63000 split 3 in one go", [], 63000, three],
     ["3 x 27999.99/4 + 0.03/4", seq(3, 27999.99, four), 0.03, four], // 3 × 6999.9975 = 20999.9925, + 0.0075 = exactly 21,000
-    ["146999.99 split 7 + 0.01 split 7", [exp({ amount: 146999.99, paidBy: "Aryan", splitAmong: People, naveenPayment: "direct" })], 0.01, People],
-    ["1000 x 147 split 7", seq(146, 1000, People), 1000, People],
+    ["146999.99 split 7 + 0.01 split 7", [exp({ amount: 146999.99, paidBy: "Aryan", splitAmong: Seven, naveenPayment: "direct" })], 0.01, Seven],
+    ["1000 x 147 split 7", seq(146, 1000, Seven), 1000, Seven],
+    ["21 x 10000 split 10", seq(20, 10000, People), 10000, People],
+    ["209999.99 split 10 + 0.01 split 10", [exp({ amount: 209999.99, paidBy: "Aryan", splitAmong: People, naveenPayment: "direct" })], 0.01, People],
+    ["3 x 62999.99/9 + 0.03/9", seq(3, 62999.99, nine), 0.03, nine], // 3 × 6999.99888… + 0.00333… = exactly 21,000
+    ["8 x 21000 split 8", seq(7, 21000, eight), 21000, eight],
   ];
   for (const [label, rows, last, split] of cases) {
     const over = naveenOverCap(People, rows, nv(last, split));
@@ -285,7 +309,7 @@ const absB = (x: bigint) => (x < 0n ? -x : x);
   eq(expenseShares(exp({ amount: 100, paidBy: "Aryan", splitAmong: ["Tejas", "Aryan", "Krish"] }), People, { exactSum: true }), [["Aryan", 33.34], ["Krish", 33.33], ["Tejas", 33.33]], "100/3 exactSum");
   eq(expenseShares(exp({ amount: 99.99, paidBy: "Aryan", splitAmong: ["Aryan", "Krish"] }), People), [["Aryan", 50], ["Krish", 50]], "99.99/2 nearest (49.995 → 50.00)");
   eq(expenseShares(exp({ amount: 99.99, paidBy: "Aryan", splitAmong: ["Aryan", "Krish"] }), People, { exactSum: true }), [["Aryan", 50], ["Krish", 49.99]], "99.99/2 exactSum");
-  eq(expenseShares(exp({ amount: 70, paidBy: "Aryan", splitAmong: [] }), People).length, 7, "empty split = everyone");
+  eq(expenseShares(exp({ amount: 70, paidBy: "Aryan", splitAmong: [] }), People).length, People.length, "empty split = everyone (all 10)");
   eq(expenseShares(exp({ amount: 500, paidBy: "Aryan", type: "personal", owedTo: "Krish" }), People), [["Krish", 500]], "personal: borrower owes all");
   const bs = computeBalances(People, [exp({ amount: 100, paidBy: "Aryan", splitAmong: ["Aryan", "Krish", "Tejas"] })], []);
   eq(bs.share.Krish, expenseShares(exp({ amount: 100, paidBy: "Aryan", splitAmong: ["Aryan", "Krish", "Tejas"] }), People)[1][1], "expenseShares == balances share");
@@ -406,7 +430,7 @@ if (process.env.TEST_TZ_ONLY) {
   eq(a.find((x) => x.title === "Biggest spender")?.winner, "Krish & Krishnam", "tie → co-winners");
   eq(a.find((x) => x.title === "Most frequent payer")?.winner, "Krish & Krishnam", "count tie → co-winners");
   eq(awards([]), [], "no awards without data");
-  // Everyone paid once: "Most frequent payer" would go to all 7, so it is not awarded at all.
+  // Everyone paid once: "Most frequent payer" would go to all 10, so it is not awarded at all.
   const everyone = People.map((p) => exp({ amount: 100, paidBy: p }));
   assert(!awards(everyone).some((x) => x.title === "Most frequent payer"), "no award when all members tie");
   assert(!awards(everyone).some((x) => x.title === "Biggest spender"), "no spender award when all paid the same");
@@ -424,10 +448,10 @@ if (process.env.TEST_TZ_ONLY) {
 
 /* ---------------------------------------------------------------- Home: personalSummary */
 {
-  // Hand-checked scenario: Aryan pays 700 for everyone; Krish pays 300 split Krish+Tejas;
+  // Hand-checked scenario: Aryan pays 700 for the original seven; Krish pays 300 split Krish+Tejas;
   // Shlok lends Aryan 50; Tejas settles 100 to Aryan.
   const rows = [
-    exp({ amount: 700, paidBy: "Aryan", category: "food", dateTime: "2026-12-18T15:00:00.000Z", createdBy: "Aryan" }),
+    exp({ amount: 700, paidBy: "Aryan", splitAmong: Seven, category: "food", dateTime: "2026-12-18T15:00:00.000Z", createdBy: "Aryan" }),
     exp({ amount: 300, paidBy: "Krish", splitAmong: ["Krish", "Tejas"], category: "travel", dateTime: "2026-12-19T15:00:00.000Z", createdBy: "Krish" }),
     exp({ amount: 50, paidBy: "Shlok", type: "personal", owedTo: "Aryan", dateTime: "2026-12-20T15:00:00.000Z", createdBy: "Shlok" }),
   ];
@@ -441,10 +465,10 @@ if (process.env.TEST_TZ_ONLY) {
   eq(a.getsFrom.reduce((s, t) => s + toPaise(t.amount), 0), toPaise(450), "Aryan: transfers to him add up to his balance");
   eq(a.paysTo, [], "Aryan pays nobody");
   eq(a.youOwePersonally, [{ from: "Aryan", to: "Shlok", amount: 50 }], "Aryan owes Shlok 50 personally");
-  // Others' average paid: (300 + 0*5) / 6 = 50; Aryan paid 700 → 650 above, 13x.
-  eq(a.paidVsOthers.avg, 50, "others' average paid");
-  eq(a.paidVsOthers.diff, 650, "difference vs others' average paid");
-  assert(a.paidVsOthers.pct !== null && Math.abs(a.paidVsOthers.pct - 13) < 1e-12, "percent vs others' average", a.paidVsOthers);
+  // Others' average paid: (300 + 0 * 8) / 9 = 33.33; Aryan paid 700 → 666.67 above, about 20x.
+  eq(a.paidVsOthers.avg, 33.33, "others' average paid");
+  eq(a.paidVsOthers.diff, 666.67, "difference vs others' average paid");
+  assert(a.paidVsOthers.pct !== null && Math.abs(a.paidVsOthers.pct - (700 - 33.33) / 33.33) < 1e-12, "percent vs others' average", a.paidVsOthers);
   eq(a.payerRank, 1, "Aryan is the top payer");
   eq([a.tripCount, a.paidCount, a.added.expenses], [1, 1, 1], "Aryan: counts");
   eq(a.byCategory.find((c) => c.value === "food")?.amount, 100, "Aryan's share is all food");
@@ -516,6 +540,7 @@ if (process.env.TEST_TZ_ONLY) {
   const good = expenseSchema.safeParse(ok);
   assert(good.success && good.data.amount === 120.5 && good.data.dateTime instanceof Date, "valid expense passes", good);
   assert(expenseSchema.safeParse({ ...ok, amount: 0.01 }).success, "0.01 allowed");
+  assert(expenseSchema.safeParse({ ...ok, paidBy: "Amisha", splitAmong: ["Riya", "Rashi", "Amisha"] }).success, "new members can pay and be in a split");
   assert(expenseSchema.safeParse({ ...ok, amount: 0.1 + 0.2 }).success, "float noise (0.30000000000000004) allowed");
   assert(expenseSchema.safeParse({ ...ok, dateTime: "2026-12-19T10:00:00+05:30" }).success, "offset date allowed");
   bad({ amount: 0.004 }, /2 decimal/, "0.004");
@@ -630,7 +655,7 @@ if (process.env.TEST_TZ_ONLY) {
 
 /* ---------------------------------------------------------------- F2 fairness: no systematic drift */
 {
-  // 10,000 random small 7-way splits (amounts 0.01..9.99) paid by random people, settled as one trip.
+  // 10,000 random small splits among everyone (10 people, amounts 0.01..9.99) paid by random people, settled as one trip.
   const rows: Expense[] = Array.from({ length: 10_000 }, () => exp({ amount: paiseToDecimal(int(1, 999)), paidBy: pick(People), splitAmong: [] }));
   const b = computeBalances(People, rows, []);
   const exactU = exactNetUnits(rows, []);
@@ -641,11 +666,11 @@ if (process.env.TEST_TZ_ONLY) {
   eq(settle(computeBalances(People, rows, record(t)).net), [], "10,000 splits: settle then record clears");
   // Shares: everyone in all rows → identical shares, nobody pays the leftover paise every time.
   assert(People.every((p) => b.share[p] === b.share.Aryan), "equal shares for everyone", b.share);
-  // Unknown names (legacy rows) beyond 7 people still split exactly (scale = lcm(1..n)).
+  // Unknown names (legacy rows) beyond the 10 members still split exactly (scale = lcm(1..n)).
   const big = [...People, "Zed", "Yan", "Xi"];
-  eq(lcmUpTo(10), 2520n, "lcm(1..10)");
+  eq([lcmUpTo(10), lcmUpTo(13)], [2520n, 360360n], "lcm(1..10), lcm(1..13)");
   const bb = computeBalances(People, [exp({ amount: 100, paidBy: "Aryan", splitAmong: big })], []);
-  assert(sumP(bb.net) === 0 && bb.share.Zed === 10, "10-way legacy split exact", bb);
+  assert(sumP(bb.net) === 0 && bb.share.Zed === 7.69, "13-way legacy split exact", bb);
 }
 
 /* ---------------------------------------------------------------- seeded fuzz: Naveen cap is exact */
@@ -655,9 +680,9 @@ if (process.env.TEST_TZ_ONLY) {
       exp({ amount: paiseToDecimal(int(1, 4_000_000)), paidBy: pick(People), splitAmong: subset(People), naveenPayment: pick(["direct", "indirect"] as const) })
     );
     const next = { amount: paiseToDecimal(int(1, 3_000_000)), type: "trip" as const, splitAmong: subset(People), naveenPayment: "direct" as const };
-    // Exact oracle (units = paise * 420), checked only for people `next` charges.
+    // Exact oracle (units = paise * UNITS_PER_PAISA), checked only for people `next` charges.
     const after = exactNaveenUnits([...existing, next]);
-    const charged = members7(next.splitAmong);
+    const charged = membersOf(next.splitAmong);
     const want = charged.filter((p) => after[p] > BigInt(NAVEEN_PER_PERSON_PAISE) * U).sort();
     const got = naveenOverCap(People, existing, next).map((o) => o.person).sort();
     eq(got, want, `naveen cap oracle (#${i})`);
@@ -711,12 +736,14 @@ async function sqlParity() {
   // F25: instalment patterns reach exactly ₹21,000 in SQL too, and 1 more paisa is rejected.
   const three = ["Aryan", "Krish", "Tejas"];
   const instalments: [string, number, string, string[]][] = [
-    ["14 x 10000 + 7000 / 7", 14, "10000.00", People],
-    ["7 x 20000 + 7000 / 7", 7, "20000.00", People],
-    ["29 x 5000 + 2000 / 7", 29, "5000.00", People],
-    ["4 x 35000 + 7000 / 7", 4, "35000.00", People],
+    ["14 x 10000 + 7000 / 7", 14, "10000.00", Seven],
+    ["7 x 20000 + 7000 / 7", 7, "20000.00", Seven],
+    ["29 x 5000 + 2000 / 7", 29, "5000.00", Seven],
+    ["4 x 35000 + 7000 / 7", 4, "35000.00", Seven],
     ["63000 / 3 in one go", 1, "63000.00", three],
     ["3 x 21000 / 3", 3, "21000.00", three],
+    ["20 x 10000 + 10000 / 10", 20, "10000.00", People],
+    ["3 x 62999.99 + 0.03 / 9", 3, "62999.99", People.slice(0, 9)],
   ];
   for (const [label, n, amt, split] of instalments) {
     await db.execute(sql`DELETE FROM expenses`);
@@ -772,17 +799,38 @@ async function sqlParity() {
   const total = (await existingRows()).reduce((s, r) => s + toPaise(r.amount), 0);
   eq(total, NAVEEN_PER_PERSON_PAISE, "SQL: Aryan ends at exactly ₹21,000.00");
   await db.execute(sql`RESET default_transaction_isolation`);
-  // Legacy 10-person split (unknown names) still exact in SQL: scale becomes lcm(1..10) = 2520.
+  // Legacy 13-person split (3 unknown names) still exact in SQL: scale becomes lcm(1..13) = 360360.
   await db.execute(sql`DELETE FROM expenses`);
-  const ten = [...PEOPLE, "Zed", "Yan", "Xi"];
-  await db.insert(schema.expenses).values({ description: "legacy", amount: "209999.99", dateTime: new Date("2026-12-19T06:00:00Z"), paidBy: "Aryan", type: "trip", splitAmong: ten, naveenPayment: "direct" });
+  const thirteen = [...PEOPLE, "Zed", "Yan", "Xi"];
+  await db.insert(schema.expenses).values({ description: "legacy", amount: "272999.99", dateTime: new Date("2026-12-19T06:00:00Z"), paidBy: "Aryan", type: "trip", splitAmong: thirteen, naveenPayment: "direct" });
   const legacyRows = await existingRows();
-  for (const [amt, split] of [["0.01", ["Aryan"]], ["0.10", [...ten]], ["0.11", [...ten]], ["0.02", ["Krish", "Zed"]]] as [string, string[]][]) {
+  // 272999.99 / 13 leaves everyone 1/13 paisa short of the cap, so 0.01 split 13 ways fills it exactly.
+  const legacyCases: [string, string[], boolean][] = [["0.01", ["Aryan"], false], ["0.01", [...thirteen], true], ["0.02", [...thirteen], false], ["0.02", ["Krish", "Zed"], false]];
+  for (const [amt, split, ok] of legacyCases) {
     const expectOk = naveenOverCap(PEOPLE, legacyRows, { amount: amt, type: "trip", splitAmong: split, naveenPayment: "direct" }).length === 0;
+    eq(expectOk, ok, "JS cap on a legacy 13-way split", { amt, split });
     const id = await tryInsert(amt, split);
-    assert((id !== null) === expectOk, "SQL == JS for a legacy 10-way split", { amt, split, expectOk });
+    assert((id !== null) === expectOk, "SQL == JS for a legacy 13-way split", { amt, split, expectOk });
     if (id !== null) await db.execute(sql`DELETE FROM expenses WHERE id = ${id}`);
   }
+
+  // Migration 0006: an old "everyone" row (empty split) keeps meaning the original seven now that Riya,
+  // Rashi and Amisha have joined. Re-run its SQL on such a row, a lend and a row with named people.
+  await db.execute(sql`DELETE FROM expenses`);
+  const at = { dateTime: new Date("2026-12-19T06:00:00Z"), paidBy: "Aryan" };
+  await db.insert(schema.expenses).values([
+    { ...at, description: "old everyone", amount: "700.00", type: "trip", splitAmong: [] },
+    { ...at, description: "lend", amount: "50.00", type: "personal", splitAmong: [], owedTo: "Krish" },
+    { ...at, description: "named", amount: "30.00", type: "trip", splitAmong: ["Riya", "Aryan"] },
+  ]);
+  const m0006 = fs.readFileSync(path.join(__dirname, "..", "drizzle", "0006_freeze_everyone_splits.sql"), "utf8");
+  for (const stmt of m0006.split("--> statement-breakpoint")) if (stmt.trim()) await db.execute(sql.raw(stmt));
+  const migrated = await existingRows();
+  const splitOf = (d: string) => migrated.find((r) => r.description === d)?.splitAmong;
+  eq(splitOf("old everyone"), Seven, "0006: an empty trip split becomes the original seven");
+  eq([splitOf("lend"), splitOf("named")], [[], ["Riya", "Aryan"]], "0006: lends and named splits are untouched");
+  const shares = computeBalances(People, migrated, []).share;
+  eq([shares.Aryan, shares.Krish, shares.Riya, shares.Amisha], [115, 100, 15, 0], "0006: new members owe nothing for old everyone rows");
   console.log(`  SQL parity: ${accepted} accepted, ${rejected} rejected — all matched the JS cap`);
 }
 

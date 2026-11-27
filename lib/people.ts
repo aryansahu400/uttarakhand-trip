@@ -1,4 +1,4 @@
-export const PEOPLE = ["Aryan", "Krish", "Tejas", "Anshul", "Shlok", "Sarthak", "Krishnam"] as const;
+export const PEOPLE = ["Aryan", "Krish", "Tejas", "Anshul", "Shlok", "Sarthak", "Krishnam", "Riya", "Rashi", "Amisha"] as const;
 
 /** Admin: can delete any entry and manage who can sign in. */
 export const ADMIN_PERSON = "Aryan";

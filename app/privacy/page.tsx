@@ -5,9 +5,9 @@ export const metadata: Metadata = { title: "Privacy policy · Uttarakhand Trip" 
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy policy" updated="23 November 2026">
+    <LegalPage title="Privacy policy" updated="27 November 2026">
       <p>
-        Uttarakhand Trip is a small, private app that a group of seven friends uses to track and split the costs of
+        Uttarakhand Trip is a small, private app that a small group of friends uses to track and split the costs of
         one trip. It is run by Aryan, the trip organiser. It is not a commercial service and is not offered to the
         public.
       </p>

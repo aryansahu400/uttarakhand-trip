@@ -32,7 +32,7 @@ export default async function SignInPage({
           <MountainBanner className="absolute inset-0 h-full w-full" />
           <div className="relative px-5 pt-5">
             <h1 className="text-xl font-semibold tracking-tight text-[#0f2238]">Uttarakhand trip</h1>
-            <p className="text-sm text-[#3a4e66]">18 December · 7 people</p>
+            <p className="text-sm text-[#3a4e66]">18 December · {PEOPLE.length} people</p>
           </div>
         </div>
         <div className="space-y-4 p-5">

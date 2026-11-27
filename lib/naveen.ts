@@ -15,8 +15,8 @@ type ExpenseLike = {
 };
 
 /**
- * Per-person Naveen payments as EXACT units (see lib/balances.ts: 1 paisa = `scale` units, 420 for
- * every split of ≤ 7 people). A payment of P paise split n ways adds P * scale / n to each member —
+ * Per-person Naveen payments as EXACT units (see lib/balances.ts: 1 paisa = `scale` units, 2520 for
+ * any split of the 10 trip members). A payment of P paise split n ways adds P * scale / n to each member —
  * the same formula as the SQL cap check in app/api/expenses/naveen-insert.ts. No rounding, so
  * instalments such as 14 × ₹10,000 + ₹7,000 split 7 ways land on exactly ₹21,000 for everyone.
  */

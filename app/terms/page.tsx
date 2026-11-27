@@ -5,9 +5,9 @@ export const metadata: Metadata = { title: "Terms of use · Uttarakhand Trip" };
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Terms of use" updated="23 November 2026">
+    <LegalPage title="Terms of use" updated="27 November 2026">
       <p>
-        Uttarakhand Trip is a private, free app for a group of seven friends to track and split the costs of one trip.
+        Uttarakhand Trip is a private, free app for a small group of friends to track and split the costs of one trip.
         It is run by Aryan, the trip organiser. By using it you agree to these simple terms.
       </p>
 
