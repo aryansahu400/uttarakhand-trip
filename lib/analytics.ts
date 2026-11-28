@@ -1,7 +1,7 @@
 import { PEOPLE } from "./people";
 import { CATEGORIES } from "./categories";
 import { computeBalances, expenseShares, personalLends, settle, splitMembers, toPaise, toRupees, tripShareOf, type Transfer } from "./balances";
-import { naveenShares } from "./naveen";
+import { NAVEEN_MEMBERS, naveenShares } from "./naveen";
 import { dayKeyIST, dayLabelIST, hourIST } from "./format";
 import type { Expense, Settlement } from "@/components/types";
 
@@ -181,7 +181,7 @@ export function personStatement(person: string, expenses: Expense[], settlements
   const { spent, share, lent, borrowed, net, settledPaid, settledReceived } = computeBalances([...PEOPLE], expenses, settlements);
   const transfers = settle(net);
   const lends = personalLends(expenses);
-  const naveen = naveenShares(PEOPLE, expenses);
+  const naveen = naveenShares(NAVEEN_MEMBERS, expenses);
   const pick = (list: Transfer[], key: "from" | "to") => list.filter((t) => t[key] === person);
   return {
     paid: spent[person] ?? 0,
@@ -231,7 +231,7 @@ export function personalSummary(person: string, expenses: Expense[], settlements
   const before = computeBalances([...PEOPLE], expenses, []);
   const transfers = settle(b.net);
   const lends = personalLends(expenses);
-  const naveen = naveenShares(PEOPLE, expenses);
+  const naveen = naveenShares(NAVEEN_MEMBERS, expenses);
   const trips = expenses.filter((e) => e.type === "trip");
   const others = PEOPLE.filter((p) => p !== person);
   const val = (rec: Record<string, number>, p: string) => rec[p] ?? 0;

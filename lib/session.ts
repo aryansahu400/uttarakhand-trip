@@ -2,6 +2,9 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { memberForEmail, type Member } from "./members";
+import { API_VERSION, API_VERSION_HEADER } from "./api-version";
+
+export { API_VERSION, API_VERSION_HEADER };
 
 /**
  * Every error from the API is a JSON body {error: string, code?: string}: a readable message, plus a stable code
@@ -9,13 +12,6 @@ import { memberForEmail, type Member } from "./members";
  */
 export const apiError = (error: string, status: number, code?: string) =>
   NextResponse.json(code ? { error, code } : { error }, { status });
-
-/**
- * Sent on every API response from this version. The phone only uploads saved entries to a server that shows it,
- * so a rollback to a release without duplicate protection can never turn retries into duplicates.
- */
-export const API_VERSION_HEADER = "X-Trip-Api";
-export const API_VERSION = "2";
 
 /** For API routes: the signed-in trip member, re-checked against the members list on every request. */
 export async function requireMember(): Promise<{ member: Member; error?: never } | { member?: never; error: NextResponse }> {

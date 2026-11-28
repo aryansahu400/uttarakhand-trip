@@ -1,9 +1,19 @@
 import { splitMembers, toPaise, toRupees, unitScale, unitsToPaise } from "./balances";
+import type { PEOPLE } from "./people";
 
 /** Travel agency (Naveen) package cost per person. */
 export const NAVEEN_PER_PERSON = 21000;
 /** The same cap in integer paise. */
 export const NAVEEN_PER_PERSON_PAISE = NAVEEN_PER_PERSON * 100;
+
+/**
+ * The people on Naveen's package. Riya, Rashi and Amisha travel with the group but have no travel agent, so a
+ * Naveen payment can only be split among these seven (anyone may still be the one who paid it).
+ */
+export const NAVEEN_MEMBERS: readonly (typeof PEOPLE)[number][] = ["Aryan", "Krish", "Tejas", "Anshul", "Shlok", "Sarthak", "Krishnam"];
+export const isNaveenMember = (person: string) => (NAVEEN_MEMBERS as readonly string[]).includes(person);
+/** The whole package: ₹21,000 for each of the seven. */
+export const NAVEEN_TOTAL = NAVEEN_PER_PERSON * NAVEEN_MEMBERS.length;
 
 export type NaveenMode = "direct" | "indirect";
 
@@ -16,7 +26,7 @@ type ExpenseLike = {
 
 /**
  * Per-person Naveen payments as EXACT units (see lib/balances.ts: 1 paisa = `scale` units, 2520 for
- * any split of the 10 trip members). A payment of P paise split n ways adds P * scale / n to each member —
+ * any split of the trip members). A payment of P paise split n ways adds P * scale / n to each member —
  * the same formula as the SQL cap check in app/api/expenses/naveen-insert.ts. No rounding, so
  * instalments such as 14 × ₹10,000 + ₹7,000 split 7 ways land on exactly ₹21,000 for everyone.
  */

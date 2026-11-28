@@ -4,7 +4,7 @@ import { Download, X } from "lucide-react";
 import { PEOPLE } from "@/lib/people";
 import { CATEGORIES, categoryOf } from "@/lib/categories";
 import { computeBalances, personalLends, toPaise, toRupees, type Transfer } from "@/lib/balances";
-import { NAVEEN_PER_PERSON, NAVEEN_PER_PERSON_PAISE, naveenShares } from "@/lib/naveen";
+import { NAVEEN_MEMBERS, NAVEEN_PER_PERSON, NAVEEN_PER_PERSON_PAISE, NAVEEN_TOTAL, isNaveenMember, naveenShares } from "@/lib/naveen";
 import { formatDate, formatINR, formatINR0 } from "@/lib/format";
 import { downloadCSV } from "@/lib/csv";
 import {
@@ -133,9 +133,10 @@ function DashboardBody({ expenses, settlements }: { expenses: Expense[]; settlem
   const status = useMemo(() => settlementStatus(expenses, settlements), [expenses, settlements]);
   const bal = useMemo(() => computeBalances([...PEOPLE], expenses, settlements), [expenses, settlements]);
   const lends = useMemo(() => personalLends(expenses), [expenses]);
-  const naveen = useMemo(() => naveenShares(PEOPLE, expenses), [expenses]);
+  // Naveen's package covers only the seven people on it (not Riya, Rashi or Amisha).
+  const naveen = useMemo(() => naveenShares(NAVEEN_MEMBERS, expenses), [expenses]);
   const tripAwards = useMemo(() => awards(expenses), [expenses]);
-  const naveenTarget = NAVEEN_PER_PERSON * PEOPLE.length;
+  const naveenTarget = NAVEEN_TOTAL;
   const naveenLeft = Math.max(0, naveenTarget - naveen.total);
   const naveenPct = Math.min(1, naveen.total / naveenTarget);
   // Never claim 100% while anything is still pending: 99.6% would otherwise round up, and pct alone can't be
@@ -184,10 +185,13 @@ function DashboardBody({ expenses, settlements }: { expenses: Expense[]; settlem
         // Every money cell goes through paise so the file holds exact 2-decimal values.
         PEOPLE.map((p) => {
           const naveenPaidP = toPaise(naveen.paid[p] ?? 0);
+          const onPackage = isNaveenMember(p);
           return [
             p, csvMoney(bal.spent[p]), csvMoney(bal.share[p]), csvMoney(bal.lent[p]), csvMoney(bal.borrowed[p]),
             csvMoney(bal.settledPaid[p]), csvMoney(bal.settledReceived[p]),
-            csvMoney(status.net[p]), toRupees(naveenPaidP), toRupees(Math.max(0, NAVEEN_PER_PERSON_PAISE - naveenPaidP)),
+            csvMoney(status.net[p]),
+            // Blank for people who aren't on Naveen's package: nothing paid, nothing owed to him.
+            onPackage ? toRupees(naveenPaidP) : "", onPackage ? toRupees(Math.max(0, NAVEEN_PER_PERSON_PAISE - naveenPaidP)) : "",
           ];
         })
       );
@@ -340,7 +344,7 @@ function DashboardBody({ expenses, settlements }: { expenses: Expense[]; settlem
             centerValue={formatINR0(naveen.total)}
           />
           <div className="space-y-2 sm:col-span-2">
-            {PEOPLE.map((p) => (
+            {NAVEEN_MEMBERS.map((p) => (
               <div key={p} className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-2 text-sm min-[360px]:gap-3">
                 <span className="truncate">{p}</span>
                 <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -808,13 +812,19 @@ function PersonView({ expenses, settlements, initial }: { expenses: Expense[]; s
         </div>
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">Naveen</div>
-          <div className="flex items-baseline justify-between text-sm">
-            <span className="tabular-nums">{formatINR(s.naveenPaid)}</span>
-            <span className="text-xs text-muted-foreground">of {formatINR(NAVEEN_PER_PERSON)}</span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full" style={{ width: `${Math.min(100, (s.naveenPaid / NAVEEN_PER_PERSON) * 100)}%`, background: C.blue }} />
-          </div>
+          {isNaveenMember(person) ? (
+            <>
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="tabular-nums">{formatINR(s.naveenPaid)}</span>
+                <span className="text-xs text-muted-foreground">of {formatINR(NAVEEN_PER_PERSON)}</span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full" style={{ width: `${Math.min(100, (s.naveenPaid / NAVEEN_PER_PERSON) * 100)}%`, background: C.blue }} />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Not on Naveen&apos;s package</p>
+          )}
           <p className="mt-4 text-sm text-muted-foreground">
             Involved in <span className="font-medium text-foreground">{s.expenseCount}</span> expense{s.expenseCount === 1 ? "" : "s"}.
           </p>

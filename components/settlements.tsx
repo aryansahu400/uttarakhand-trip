@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { useRowDelete } from "@/components/ui/use-row-delete";
-import { useDraftClientId } from "@/lib/client-id";
+import { savedOnServer, useDraftClientId } from "@/lib/client-id";
 import { toastApiFailure, type Expense, type Reload, type Settlement } from "./types";
 
 const deleteUrl = (id: number) => `/api/settlements/${id}`;
@@ -46,6 +46,16 @@ export function Settlements({
 
   const visible = useMemo(() => settlements.filter((s) => !removed.has(s.id)), [settlements, removed]);
   const pending = useMemo(() => settle(computeBalances([...PEOPLE], expenses, visible).net), [expenses, visible]);
+
+  // A settlement whose answer was lost may still have been recorded. Once the refreshed list shows it, the form
+  // is done with it: clear it and say so, so the kept id can't swallow a later identical payment.
+  useEffect(() => {
+    if (busy || !savedOnServer(draft.pending(), settlements)) return;
+    draft.clear();
+    setAmount("");
+    setNote("");
+    toast.success("Your settlement was recorded after all ✓", { id: "saved-after-all" });
+  }, [settlements, busy, draft]);
 
   // Drop the highlight ring shortly after "Use" fills the form.
   useEffect(() => {
@@ -82,8 +92,15 @@ export function Settlements({
     if (busy) return;
     if (from === to) return toast.error("From and To must be different");
     if (!(Number(amount) > 0)) return toast.error("Enter a valid amount");
-    setBusy(true);
     const details = { fromPerson: from, toPerson: to, amount: Number(amount), note };
+    // Exactly this settlement was recorded earlier (its answer was lost, the list has caught up since).
+    if (savedOnServer(draft.peek(details), settlements)) {
+      draft.clear();
+      setAmount("");
+      setNote("");
+      return toast.success("This settlement was already recorded earlier ✓");
+    }
+    setBusy(true);
     // Same details as a save that failed (or whose answer was lost) → same id → the server records it once.
     const clientId = draft.idFor(details);
     try {
@@ -93,15 +110,18 @@ export function Settlements({
         body: JSON.stringify({ ...details, clientId, asPerson: me.person }),
       });
       if (!res.ok) {
+        // 410: it was recorded earlier and deleted since; a new tap is a new settlement with a new id.
+        if (res.status === 410) draft.clear();
         await toastApiFailure(res, "Could not save settlement"); // 401/403 redirect to sign-in
         return;
       }
       draft.clear();
-      const saved = (await res.json().catch(() => null)) as { conflict?: boolean } | null;
+      const saved = (await res.json().catch(() => null)) as { replay?: boolean; conflict?: boolean } | null;
       setAmount("");
       setNote("");
       await onChanged(); // pending list reflects the new settlement before we confirm
-      if (saved?.conflict) toast.info("This settlement was already recorded earlier. Check it in the list.");
+      if (saved?.conflict) toast.info("This settlement was already recorded earlier with other details. Check it in the list.");
+      else if (saved?.replay) toast.success("This settlement was already recorded earlier ✓");
       else toast.success("Settlement recorded");
     } catch {
       toast.error("Could not save settlement. Check your connection and try again.");

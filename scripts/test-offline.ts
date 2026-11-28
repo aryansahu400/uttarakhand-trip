@@ -11,7 +11,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { sql } from "drizzle-orm";
 import { PEOPLE } from "../lib/people";
-import { NAVEEN_PER_PERSON } from "../lib/naveen";
+import { NAVEEN_MEMBERS, NAVEEN_PER_PERSON, NAVEEN_TOTAL, isNaveenMember } from "../lib/naveen";
+import { expenseSchema } from "../lib/validate";
+import { DraftClientId, savedOnServer } from "../lib/client-id";
 
 let checks = 0;
 function assert(cond: unknown, msg: string, ...ctx: unknown[]): asserts cond {
@@ -39,6 +41,40 @@ const expense = (over: Record<string, unknown> = {}) => ({
   category: "food",
   ...over,
 });
+
+/* ---------------------------------------------------------------- Naveen's package: the original seven only */
+{
+  eq([...NAVEEN_MEMBERS], ["Aryan", "Krish", "Tejas", "Anshul", "Shlok", "Sarthak", "Krishnam"], "Naveen's package: the original seven");
+  assert(NAVEEN_MEMBERS.every((p) => (PEOPLE as readonly string[]).includes(p)), "every package member is a trip member");
+  eq(NAVEEN_TOTAL, 147000, "Naveen's package total: 7 × ₹21,000");
+  eq(PEOPLE.filter((p) => !isNaveenMember(p)), ["Riya", "Rashi", "Amisha"], "Riya, Rashi and Amisha are not on the package");
+  const naveen = (splitAmong: string[], paidBy = "Aryan") =>
+    expenseSchema.safeParse({ description: "Naveen advance", amount: 7000, dateTime: "2026-12-18T05:00:00.000Z", paidBy, type: "trip", splitAmong, naveenPayment: "direct" });
+  assert(naveen([...NAVEEN_MEMBERS]).success, "a Naveen payment split among the seven is valid");
+  assert(naveen(["Krish", "Tejas"], "Rashi").success, "anyone may be the payer of a Naveen payment");
+  const withRiya = naveen(["Aryan", "Riya"]);
+  assert(!withRiya.success && /only be split among the 7 people on his package \(not Riya\)/.test(withRiya.error.issues[0].message), "a Naveen split with Riya is refused", withRiya);
+  assert(!naveen([...PEOPLE]).success, "a Naveen split among all 10 is refused");
+  const dinner = expenseSchema.safeParse({ description: "Dinner", amount: 3000, dateTime: "2026-12-18T15:00:00.000Z", paidBy: "Riya", type: "trip", splitAmong: [...PEOPLE] });
+  assert(dinner.success, "an ordinary expense still splits among all 10");
+}
+
+/* ---------------------------------------------------------------- form draft ids (lib/client-id.ts) */
+{
+  let n = 0;
+  const d = new DraftClientId(() => `id-${++n}`);
+  const details = { description: "Dinner", amount: 100 };
+  eq([d.pending(), d.peek(details)], [null, null], "draft: nothing pending at first");
+  const a = d.idFor(details);
+  eq([d.idFor({ ...details }), d.peek(details), d.pending()], [a, a, a], "draft: same details keep the same id");
+  const b = d.idFor({ ...details, amount: 200 });
+  assert(b !== a, "draft: changed details get a new id");
+  eq(d.peek(details), null, "draft: the old details no longer match");
+  d.clear();
+  eq(d.pending(), null, "draft: cleared");
+  assert(d.idFor(details) !== a, "draft: after clear, the same details get a new id (a new entry)");
+  eq([savedOnServer("x", [{ clientId: "y" }, { clientId: "x" }]), savedOnServer("x", [{ clientId: null }]), savedOnServer(null, [{ clientId: null }])], [true, false, false], "savedOnServer");
+}
 
 async function main() {
   const { PGlite } = await import("@electric-sql/pglite");
@@ -172,6 +208,42 @@ async function main() {
     eq(burst.filter((r) => r.status === 201).length, 1, "10 concurrent Naveen copies at the limit: one 201");
     assert(burst.every((r) => r.status === 201 || r.status === 200), "10 concurrent Naveen copies: never reported as over the limit", burst.map((r) => r.status));
     eq((await rows()).length, 1, "10 concurrent Naveen copies: one row");
+  }
+
+  /* ---------------------------------------------------------------- Naveen payments can't include Riya, Rashi or Amisha */
+  {
+    await reset();
+    const pay = (over: Record<string, unknown>) => expense({ description: "Naveen", naveenPayment: "direct", category: "stay", amount: 7000, ...over });
+    const bad = await saveExpense(db, ARYAN, pay({ clientId: uuid(), splitAmong: ["Aryan", "Rashi"] }));
+    eq([bad.status, bad.body.code], [400, "invalid"], "Naveen split with Rashi: 400 invalid");
+    const ok = await saveExpense(db, ARYAN, pay({ clientId: uuid(), splitAmong: [...NAVEEN_MEMBERS], paidBy: "Amisha" }));
+    eq(ok.status, 201, "Naveen split among the seven, paid by Amisha: 201");
+    // A retry of an entry already stored is acknowledged even if today's rules would refuse it.
+    const cid = uuid();
+    await pg.insert(schema.expenses).values({ description: "old", amount: "700.00", dateTime: new Date("2026-12-18T05:00:00Z"), paidBy: "Aryan", type: "trip", splitAmong: ["Aryan", "Riya"], naveenPayment: "direct", clientId: cid });
+    const old = await saveExpense(db, ARYAN, pay({ clientId: cid, splitAmong: ["Aryan", "Riya"], description: "old", amount: 700 }));
+    eq(old.status, 200, "a stored entry is still acknowledged on retry");
+  }
+
+  /* ---------------------------------------------------------------- one client id, one entry (across kinds) */
+  {
+    await reset();
+    const s = (over: Record<string, unknown> = {}) => ({ fromPerson: "Krish", toPerson: "Aryan", amount: 500, ...over });
+    const cid = uuid();
+    eq((await saveExpense(db, ARYAN, expense({ clientId: cid }))).status, 201, "expense with id X");
+    const clash = await saveSettlement(db, KRISH, s({ clientId: cid }));
+    eq([clash.status, clash.body.code], [400, "invalid"], "a settlement can't reuse an expense's id");
+    const sid = uuid();
+    eq((await saveSettlement(db, KRISH, s({ clientId: sid }))).status, 201, "settlement with id Y");
+    const clash2 = await saveExpense(db, ARYAN, expense({ clientId: sid }));
+    eq([clash2.status, clash2.body.code], [400, "invalid"], "an expense can't reuse a settlement's id");
+    // Deleted expense X: an expense retry gets 410, a settlement with X is refused (not told "deleted").
+    const [row] = await pg.select().from(schema.expenses);
+    await deleteWithTombstone(pg, "expense", row.id, "Aryan");
+    eq((await saveExpense(db, ARYAN, expense({ clientId: cid }))).status, 410, "expense retry after delete: 410");
+    const afterDelete = await saveSettlement(db, KRISH, s({ clientId: cid }));
+    eq([afterDelete.status, afterDelete.body.code], [400, "invalid"], "deleted expense's id can't become a settlement");
+    eq((await pg.select().from(schema.settlements)).length, 1, "only the real settlement exists");
   }
 
   /* ---------------------------------------------------------------- settlements: same rules */

@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
+import { API_VERSION, API_VERSION_HEADER } from "./lib/api-version";
 
 const INTERNAL = "http://internal.invalid";
 
@@ -38,7 +39,8 @@ export const authConfig = {
       const { pathname } = request.nextUrl;
       if (["/signin", "/api/auth", "/privacy", "/terms"].some((p) => pathname.startsWith(p))) return true;
       if (auth?.user) return true;
-      if (pathname.startsWith("/api/")) return Response.json({ error: "Sign in required", code: "signed_out" }, { status: 401 });
+      if (pathname.startsWith("/api/"))
+        return Response.json({ error: "Sign in required", code: "signed_out" }, { status: 401, headers: { [API_VERSION_HEADER]: API_VERSION } });
       return false; // → redirect to /signin
     },
   },

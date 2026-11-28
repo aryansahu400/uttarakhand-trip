@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { NAVEEN_PER_PERSON, naveenOverCap, naveenShares, type NaveenMode } from "@/lib/naveen";
+import { NAVEEN_MEMBERS, NAVEEN_PER_PERSON, NAVEEN_TOTAL, isNaveenMember, naveenOverCap, naveenShares, type NaveenMode } from "@/lib/naveen";
 import { formatINR } from "@/lib/format";
 import { toastApiFailure, type Expense, type Reload } from "./types";
 import { shareSummary } from "./expense-details";
@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { useDraftClientId } from "@/lib/client-id";
+import { savedOnServer, useDraftClientId } from "@/lib/client-id";
 
 export const nowLocal = () => {
   const d = new Date();
@@ -44,10 +44,46 @@ export function AddExpense({ onSaved, expenses, loading = false }: { onSaved: Re
   // Auto-guess from the description until the user picks one themselves.
   const category: Category = pickedCategory ?? guessCategory(description) ?? "other";
 
-  const naveen = useMemo(() => naveenShares(PEOPLE, expenses), [expenses]);
-  const naveenRemaining = NAVEEN_PER_PERSON * PEOPLE.length - naveen.total;
+  const naveen = useMemo(() => naveenShares(NAVEEN_MEMBERS, expenses), [expenses]);
+  const naveenRemaining = NAVEEN_TOTAL - naveen.total;
+  // Riya, Rashi and Amisha travel with the group but aren't on Naveen's package.
+  const notOnPackage = PEOPLE.filter((p) => !isNaveenMember(p));
+  const naveenSplit = type === "trip" && isNaveen;
 
-  const toggle = (p: string) => setSplit((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]));
+  const toggle = (p: string) => {
+    if (naveenSplit && !isNaveenMember(p)) return;
+    setSplit((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]));
+  };
+
+  /** Ticking "Naveen's payment" limits the split to the people on his package (all seven if none were left). */
+  function setNaveen(on: boolean) {
+    setIsNaveen(on);
+    if (on) setSplit((s) => {
+      const kept = s.filter(isNaveenMember);
+      return kept.length ? kept : [...NAVEEN_MEMBERS];
+    });
+  }
+
+  function resetForm() {
+    setDescription("");
+    setAmount("");
+    setDateTime(nowLocal());
+    setSplit([...PEOPLE]);
+    setOwedTo("");
+    setIsNaveen(false);
+    setNaveenMode("direct");
+    setPickedCategory(null);
+  }
+
+  // A save whose answer was lost (weak signal) may still have reached the trip. Once a refreshed list shows it,
+  // the form is done with it: clear it and say so, so the old details and id can't swallow a later entry.
+  useEffect(() => {
+    if (busy || !savedOnServer(draft.pending(), expenses)) return;
+    draft.clear();
+    resetForm();
+    toast.success("Your expense was saved after all ✓", { id: "saved-after-all" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetForm only calls state setters
+  }, [expenses, busy, draft]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -59,15 +95,7 @@ export function AddExpense({ onSaved, expenses, loading = false }: { onSaved: Re
     if (type === "trip" && split.length === 0) return toast.error("Select at least one person to split among");
     if (type === "personal" && (!owedTo || owedTo === paidBy)) return toast.error("Select who borrowed the money");
     const sendNaveen = type === "trip" && isNaveen ? naveenMode : null;
-    if (sendNaveen) {
-      const over = naveenOverCap(PEOPLE, expenses, { amount: Number(amount), type, splitAmong: split, naveenPayment: sendNaveen });
-      if (over.length)
-        return toast.error(
-          `Naveen's payment would exceed ${formatINR(NAVEEN_PER_PERSON)}/person for ${over.map((o) => `${o.person} (+${formatINR(o.over)})`).join(", ")}`
-        );
-    }
     if (busy) return;
-    setBusy(true);
     const details = {
       description,
       amount: Number(amount),
@@ -79,6 +107,21 @@ export function AddExpense({ onSaved, expenses, loading = false }: { onSaved: Re
       naveenPayment: sendNaveen,
       category,
     };
+    // Exactly this entry was saved earlier (its answer was lost, the list has caught up since): don't check the
+    // Naveen limit against itself or send it again.
+    if (savedOnServer(draft.peek(details), expenses)) {
+      draft.clear();
+      resetForm();
+      return toast.success("This expense was already saved earlier ✓");
+    }
+    if (sendNaveen) {
+      const over = naveenOverCap(NAVEEN_MEMBERS, expenses, { amount: Number(amount), type, splitAmong: split, naveenPayment: sendNaveen });
+      if (over.length)
+        return toast.error(
+          `Naveen's payment would exceed ${formatINR(NAVEEN_PER_PERSON)}/person for ${over.map((o) => `${o.person} (+${formatINR(o.over)})`).join(", ")}`
+        );
+    }
+    setBusy(true);
     // Same details as a save that failed (or whose answer was lost) → same id → the server stores it once.
     const clientId = draft.idFor(details);
     try {
@@ -88,22 +131,18 @@ export function AddExpense({ onSaved, expenses, loading = false }: { onSaved: Re
         body: JSON.stringify({ ...details, clientId, asPerson: me.person }),
       });
       if (!res.ok) {
+        // 410: it was saved earlier and deleted since; a new tap is a new entry with a new id.
+        if (res.status === 410) draft.clear();
         await toastApiFailure(res, "Could not save expense"); // 401/403 redirect to sign-in
         return;
       }
       draft.clear();
-      // 200 = a retry of a save that had already gone through; `conflict` = it was stored with other details.
-      const saved = (await res.json().catch(() => null)) as { conflict?: boolean } | null;
-      setDescription("");
-      setAmount("");
-      setDateTime(nowLocal());
-      setSplit([...PEOPLE]);
-      setOwedTo("");
-      setIsNaveen(false);
-      setNaveenMode("direct");
-      setPickedCategory(null);
+      // 200 + replay = a retry of a save that had already gone through; conflict = stored with other details.
+      const saved = (await res.json().catch(() => null)) as { replay?: boolean; conflict?: boolean } | null;
+      resetForm();
       await onSaved(); // lists/dashboard are fresh by the time we confirm
-      if (saved?.conflict) toast.info("This expense was already added earlier. Check it in the list.");
+      if (saved?.conflict) toast.info("This expense was already saved earlier with other details. Check it in the list.");
+      else if (saved?.replay) toast.success("This expense was already saved earlier ✓");
       else toast.success("Expense added");
     } catch {
       toast.error("Could not save expense. Check your connection and try again.");
@@ -220,25 +259,49 @@ export function AddExpense({ onSaved, expenses, loading = false }: { onSaved: Re
                 <div className="flex items-center justify-between">
                   <Label>Split among</Label>
                   <div className="-my-2 -mr-3 flex">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setSplit([...PEOPLE])} aria-pressed={split.length === PEOPLE.length}>All</Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSplit(naveenSplit ? [...NAVEEN_MEMBERS] : [...PEOPLE])}
+                      aria-pressed={split.length === (naveenSplit ? NAVEEN_MEMBERS.length : PEOPLE.length)}
+                    >
+                      All
+                    </Button>
                     <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setSplit([])}>None</Button>
                   </div>
                 </div>
                 {/* 10 people: 2 per row on phones and in the two-column desktop form, 5 per row on tablets (no half-empty last row). */}
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-5 lg:grid-cols-2">
-                  {PEOPLE.map((p) => (
-                    <label key={p} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border bg-card px-3 text-sm transition-colors [-webkit-tap-highlight-color:transparent] hover:bg-muted/60 active:bg-muted lg:min-h-9">
-                      <Checkbox checked={split.includes(p)} onCheckedChange={() => toggle(p)} />
-                      {p}
-                    </label>
-                  ))}
+                  {PEOPLE.map((p) => {
+                    const off = naveenSplit && !isNaveenMember(p);
+                    return (
+                      <label
+                        key={p}
+                        title={off ? "Not on Naveen's package" : undefined}
+                        className={cn(
+                          "flex min-h-11 items-center gap-2 rounded-md border bg-card px-3 text-sm transition-colors [-webkit-tap-highlight-color:transparent] lg:min-h-9",
+                          off ? "cursor-not-allowed text-muted-foreground opacity-60" : "cursor-pointer hover:bg-muted/60 active:bg-muted"
+                        )}
+                      >
+                        <Checkbox checked={!off && split.includes(p)} disabled={off} onCheckedChange={() => toggle(p)} />
+                        {p}
+                      </label>
+                    );
+                  })}
                 </div>
+                {naveenSplit && notOnPackage.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {notOnPackage.length > 1 ? `${notOnPackage.slice(0, -1).join(", ")} and ${notOnPackage[notOnPackage.length - 1]}` : notOnPackage[0]}{" "}
+                    {notOnPackage.length > 1 ? "aren't" : "isn't"} on Naveen&apos;s package.
+                  </p>
+                )}
                 {split.length > 0 && Number(amount) > 0 && (
                   <p className="text-xs text-muted-foreground">{shareSummary(amount, split).label} per person</p>
                 )}
                 <div className="mt-3 space-y-3 rounded-md border bg-muted/40 p-3">
                   <label className="flex min-h-10 cursor-pointer items-center gap-2 text-sm font-medium lg:min-h-8">
-                    <Checkbox checked={isNaveen} onCheckedChange={(c) => setIsNaveen(c === true)} />
+                    <Checkbox checked={isNaveen} onCheckedChange={(c) => setNaveen(c === true)} />
                     Naveen&apos;s payment (travel agency)
                   </label>
                   {isNaveen && (

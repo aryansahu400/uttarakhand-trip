@@ -2,6 +2,7 @@ import { z } from "zod";
 import { PEOPLE } from "./people";
 import { CATEGORY_VALUES } from "./categories";
 import { dayKeyIST } from "./format";
+import { NAVEEN_MEMBERS, isNaveenMember } from "./naveen";
 
 /** Dates must fall in this window (India-time years, inclusive); keeps typos and junk out of the charts. */
 export const MIN_YEAR = 2025;
@@ -98,6 +99,13 @@ export const expenseSchema = z
   .superRefine((v, ctx) => {
     if (v.naveenPayment && v.type !== "trip")
       ctx.addIssue({ code: "custom", path: ["naveenPayment"], message: "Naveen payments must be trip expenses" });
+    const outside = v.naveenPayment ? v.splitAmong.filter((p) => !isNaveenMember(p)) : [];
+    if (outside.length)
+      ctx.addIssue({
+        code: "custom",
+        path: ["splitAmong"],
+        message: `Naveen's payments can only be split among the ${NAVEEN_MEMBERS.length} people on his package (not ${outside.join(", ")})`,
+      });
     if (v.type === "trip" && v.splitAmong.length === 0)
       ctx.addIssue({ code: "custom", path: ["splitAmong"], message: "Select at least one person" });
     if (v.type === "personal") {

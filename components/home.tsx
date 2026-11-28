@@ -21,7 +21,7 @@ import {
 import { PEOPLE } from "@/lib/people";
 import { dayKey, dayLabel, personalSummary, type ActivityItem, type PersonalSummary, type VsOthers } from "@/lib/analytics";
 import { categoryOf } from "@/lib/categories";
-import { NAVEEN_PER_PERSON } from "@/lib/naveen";
+import { NAVEEN_PER_PERSON, isNaveenMember } from "@/lib/naveen";
 import { formatINR, formatINR0 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Transfer } from "@/lib/balances";
@@ -387,7 +387,11 @@ function KpiTiles({ s }: { s: PersonalSummary }) {
         value={formatINR0(s.avgPerDay)}
         sub={s.activeDays ? `Your share over ${plural(s.activeDays, "day")} with spend` : "No days with spend yet"}
       />
-      <Tile icon={Mountain} label="Naveen package" value={formatINR0(s.naveenPaid)} sub={`of ${formatINR0(NAVEEN_PER_PERSON)} · ${pct(naveenPct)} paid`} progress={naveenPct} />
+      {isNaveenMember(s.person) ? (
+        <Tile icon={Mountain} label="Naveen package" value={formatINR0(s.naveenPaid)} sub={`of ${formatINR0(NAVEEN_PER_PERSON)} · ${pct(naveenPct)} paid`} progress={naveenPct} />
+      ) : (
+        <Tile icon={Mountain} label="Naveen package" value="Not included" sub="You're not on Naveen's package" />
+      )}
       <Tile
         icon={Medal}
         label="Payer rank"

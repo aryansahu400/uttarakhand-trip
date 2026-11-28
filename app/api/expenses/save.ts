@@ -1,10 +1,9 @@
 import { eq, isNotNull } from "drizzle-orm";
 import type { NeonHttpDatabase } from "drizzle-orm/neon-http";
 import type * as schema from "@/db/schema";
-import { deletedClientIds, expenses } from "@/db/schema";
+import { deletedClientIds, expenses, settlements } from "@/db/schema";
 import { clientIdOf, expenseSchema, firstError } from "@/lib/validate";
-import { NAVEEN_PER_PERSON, naveenOverCap } from "@/lib/naveen";
-import { PEOPLE } from "@/lib/people";
+import { NAVEEN_MEMBERS, NAVEEN_PER_PERSON, naveenOverCap } from "@/lib/naveen";
 import { formatINR } from "@/lib/format";
 import { paiseToDecimal, toPaise } from "@/lib/balances";
 import { insertNaveenWithinCap, type DbLike } from "./naveen-insert";
@@ -45,7 +44,8 @@ const byClientId = async (db: Db, cid: string) => (await db.select().from(expens
  * Saves one expense. Safe to call any number of times with the same client id: it is stored once, and every
  * retry gets 200 with that row. The order matters:
  *   1. the client id is looked up BEFORE validation, so a stored entry is always acknowledged;
- *   2. an id deleted after it was saved answers 410, so a late retry can't bring it back;
+ *   2. an id deleted after it was saved answers 410, so a late retry can't bring it back; an id that belongs
+ *      to a settlement (now or before it was deleted) is refused, so one id is one entry;
  *   3. validation (400 invalid);
  *   4. a different signed-in person than the one who saved it on the phone answers 409 wrong_user;
  *   5. insert with ON CONFLICT (client_id) DO NOTHING, also inside the Naveen cap statement;
@@ -56,8 +56,11 @@ export async function saveExpense(db: Db, member: { person: string; isAdmin: boo
   if (cid) {
     const stored = await byClientId(db, cid);
     if (stored) return replay(stored, raw);
-    const [gone] = await db.select({ id: deletedClientIds.clientId }).from(deletedClientIds).where(eq(deletedClientIds.clientId, cid)).limit(1);
-    if (gone) return { status: 410, body: { error: "This expense was added earlier and deleted since, so it was not added again", code: "deleted" } };
+    const [gone] = await db.select({ kind: deletedClientIds.kind }).from(deletedClientIds).where(eq(deletedClientIds.clientId, cid)).limit(1);
+    if (gone?.kind === "expense")
+      return { status: 410, body: { error: "This expense was added earlier and deleted since, so it was not added again", code: "deleted" } };
+    const [other] = await db.select({ id: settlements.id }).from(settlements).where(eq(settlements.clientId, cid)).limit(1);
+    if (gone || other) return { status: 400, body: { error: "This entry's id is already used by another entry", code: "invalid" } };
   }
 
   const parsed = expenseSchema.safeParse(raw);
@@ -90,7 +93,7 @@ export async function saveExpense(db: Db, member: { person: string; isAdmin: boo
         createdBy: member.person,
         clientId,
       },
-      PEOPLE
+      NAVEEN_MEMBERS
     );
     if (id !== null) {
       const [row] = await db.select().from(expenses).where(eq(expenses.id, id)).limit(1);
@@ -131,7 +134,7 @@ export async function saveExpense(db: Db, member: { person: string; isAdmin: boo
 /** Explains a rejected Naveen payment: who would go over and by how much (same maths as the SQL). */
 async function overCapMessage(db: Db, v: Parameters<typeof naveenOverCap>[2]) {
   const existing = await db.select().from(expenses).where(isNotNull(expenses.naveenPayment));
-  const over = naveenOverCap(PEOPLE, existing, v);
+  const over = naveenOverCap(NAVEEN_MEMBERS, existing, v);
   const who = over.length ? `: ${over.map((o) => `${o.person} (+${formatINR(o.over)})`).join(", ")}` : "";
   return `Naveen's payments would exceed ${formatINR(NAVEEN_PER_PERSON)} per person${who}`;
 }

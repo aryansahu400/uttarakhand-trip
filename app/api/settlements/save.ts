@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { deletedClientIds, settlements } from "@/db/schema";
+import { deletedClientIds, expenses, settlements } from "@/db/schema";
 import { clientIdOf, firstError, settlementSchema } from "@/lib/validate";
 import { paiseToDecimal, toPaise } from "@/lib/balances";
 import type { Db, SaveResult } from "../expenses/save";
@@ -35,8 +35,12 @@ export async function saveSettlement(db: Db, member: { person: string; isAdmin: 
   if (cid) {
     const stored = await byClientId(db, cid);
     if (stored) return replay(stored, raw);
-    const [gone] = await db.select({ id: deletedClientIds.clientId }).from(deletedClientIds).where(eq(deletedClientIds.clientId, cid)).limit(1);
-    if (gone) return { status: 410, body: { error: "This settlement was recorded earlier and deleted since, so it was not added again", code: "deleted" } };
+    const [gone] = await db.select({ kind: deletedClientIds.kind }).from(deletedClientIds).where(eq(deletedClientIds.clientId, cid)).limit(1);
+    if (gone?.kind === "settlement")
+      return { status: 410, body: { error: "This settlement was recorded earlier and deleted since, so it was not added again", code: "deleted" } };
+    // One id, one entry: an id used by an expense (now or before it was deleted) can't become a settlement.
+    const [other] = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.clientId, cid)).limit(1);
+    if (gone || other) return { status: 400, body: { error: "This entry's id is already used by another entry", code: "invalid" } };
   }
 
   const parsed = settlementSchema.safeParse(raw);
