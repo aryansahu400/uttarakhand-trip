@@ -31,13 +31,14 @@ export function safeCallbackPath(raw: unknown, host?: string | null): string {
 export const authConfig = {
   providers: [Google],
   pages: { signIn: "/signin", error: "/signin" },
-  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 30 },
+  // 60 days, renewed on every request the middleware sees, so nobody is signed out during the trip.
+  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 60 },
   callbacks: {
     authorized({ auth, request }) {
       const { pathname } = request.nextUrl;
       if (["/signin", "/api/auth", "/privacy", "/terms"].some((p) => pathname.startsWith(p))) return true;
       if (auth?.user) return true;
-      if (pathname.startsWith("/api/")) return Response.json({ error: "Sign in required" }, { status: 401 });
+      if (pathname.startsWith("/api/")) return Response.json({ error: "Sign in required", code: "signed_out" }, { status: 401 });
       return false; // → redirect to /signin
     },
   },

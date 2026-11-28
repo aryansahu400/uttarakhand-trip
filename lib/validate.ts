@@ -38,6 +38,22 @@ const CONTROL_EXCEPT_WHITESPACE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F
 const textError = (label: string) => (iss: { input?: unknown }) =>
   iss.input === undefined || iss.input === null ? `${label} is required` : `${label} must be text`;
 
+/**
+ * Id made on the phone (crypto.randomUUID) when an entry is created and sent with every retry, so the server can
+ * recognise a retry and never store it twice. Version 4 only: the nil and max UUIDs are rejected.
+ */
+const clientId = z
+  .uuidv4({ error: "Invalid client id" })
+  .transform((s) => s.toLowerCase())
+  .optional();
+
+/** The valid client id in a raw request body (lower-cased), or null. Used to find a retry before validating. */
+export function clientIdOf(raw: unknown): string | null {
+  const v = raw && typeof raw === "object" ? (raw as { clientId?: unknown }).clientId : undefined;
+  const r = clientId.safeParse(v);
+  return r.success && r.data ? r.data : null;
+}
+
 /** ISO 8601 date-time string with a timezone (Z or ±hh:mm), in a sensible year range. */
 const dateTime = z
   .string({ error: "Date must be an ISO date-time string" })
@@ -73,6 +89,9 @@ export const expenseSchema = z
       owedTo: person("Owed by").nullish(),
       naveenPayment: z.enum(["direct", "indirect"], { error: "Naveen payment must be direct or indirect" }).nullish(),
       category: z.enum(CATEGORY_VALUES, { error: "Pick a valid category" }).default("other"),
+      clientId,
+      // Who saved it on the phone; the server refuses to file it under a different signed-in person.
+      asPerson: person("Saved by").optional(),
     },
     { error: "Request body must be a JSON object" }
   )
@@ -99,6 +118,8 @@ export const settlementSchema = z
         .max(200, "Note must be at most 200 characters")
         .refine((s) => !CONTROL_EXCEPT_WHITESPACE.test(s), { message: "Note contains invalid characters (control characters are not allowed)" })
         .nullish(),
+      clientId,
+      asPerson: person("Saved by").optional(),
     },
     { error: "Request body must be a JSON object" }
   )

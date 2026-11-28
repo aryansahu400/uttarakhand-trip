@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useDraftClientId } from "@/lib/client-id";
 
 export const nowLocal = () => {
   const d = new Date();
@@ -38,6 +39,7 @@ export function AddExpense({ onSaved, expenses, loading = false }: { onSaved: Re
   const [naveenMode, setNaveenMode] = useState<NaveenMode>("direct");
   const [pickedCategory, setPickedCategory] = useState<Category | null>(null);
   const [busy, setBusy] = useState(false);
+  const draft = useDraftClientId();
 
   // Auto-guess from the description until the user picks one themselves.
   const category: Category = pickedCategory ?? guessCategory(description) ?? "other";
@@ -66,26 +68,32 @@ export function AddExpense({ onSaved, expenses, loading = false }: { onSaved: Re
     }
     if (busy) return;
     setBusy(true);
+    const details = {
+      description,
+      amount: Number(amount),
+      dateTime: new Date(dateTime).toISOString(),
+      paidBy,
+      type,
+      splitAmong: type === "trip" ? split : [],
+      owedTo: type === "personal" ? owedTo : null,
+      naveenPayment: sendNaveen,
+      category,
+    };
+    // Same details as a save that failed (or whose answer was lost) → same id → the server stores it once.
+    const clientId = draft.idFor(details);
     try {
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description,
-          amount: Number(amount),
-          dateTime: new Date(dateTime).toISOString(),
-          paidBy,
-          type,
-          splitAmong: type === "trip" ? split : [],
-          owedTo: type === "personal" ? owedTo : null,
-          naveenPayment: sendNaveen,
-          category,
-        }),
+        body: JSON.stringify({ ...details, clientId, asPerson: me.person }),
       });
       if (!res.ok) {
         await toastApiFailure(res, "Could not save expense"); // 401/403 redirect to sign-in
         return;
       }
+      draft.clear();
+      // 200 = a retry of a save that had already gone through; `conflict` = it was stored with other details.
+      const saved = (await res.json().catch(() => null)) as { conflict?: boolean } | null;
       setDescription("");
       setAmount("");
       setDateTime(nowLocal());
@@ -95,7 +103,8 @@ export function AddExpense({ onSaved, expenses, loading = false }: { onSaved: Re
       setNaveenMode("direct");
       setPickedCategory(null);
       await onSaved(); // lists/dashboard are fresh by the time we confirm
-      toast.success("Expense added");
+      if (saved?.conflict) toast.info("This expense was already added earlier. Check it in the list.");
+      else toast.success("Expense added");
     } catch {
       toast.error("Could not save expense. Check your connection and try again.");
     } finally {

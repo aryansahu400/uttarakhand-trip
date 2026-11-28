@@ -50,6 +50,13 @@
       "when": 1795793950602,
       "tag": "0006_freeze_everyone_splits",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795846094876,
+      "tag": "0007_offline",
+      "breakpoints": true
     }
   ]
 }

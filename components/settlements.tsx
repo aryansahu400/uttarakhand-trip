@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { useRowDelete } from "@/components/ui/use-row-delete";
+import { useDraftClientId } from "@/lib/client-id";
 import { toastApiFailure, type Expense, type Reload, type Settlement } from "./types";
 
 const deleteUrl = (id: number) => `/api/settlements/${id}`;
@@ -40,6 +41,7 @@ export function Settlements({
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState(false);
   const amountInput = useRef<HTMLInputElement>(null);
+  const draft = useDraftClientId();
   const { remove, isDeleting, removed } = useRowDelete(deleteUrl, "settlement", onChanged);
 
   const visible = useMemo(() => settlements.filter((s) => !removed.has(s.id)), [settlements, removed]);
@@ -81,20 +83,26 @@ export function Settlements({
     if (from === to) return toast.error("From and To must be different");
     if (!(Number(amount) > 0)) return toast.error("Enter a valid amount");
     setBusy(true);
+    const details = { fromPerson: from, toPerson: to, amount: Number(amount), note };
+    // Same details as a save that failed (or whose answer was lost) → same id → the server records it once.
+    const clientId = draft.idFor(details);
     try {
       const res = await fetch("/api/settlements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromPerson: from, toPerson: to, amount: Number(amount), note }),
+        body: JSON.stringify({ ...details, clientId, asPerson: me.person }),
       });
       if (!res.ok) {
         await toastApiFailure(res, "Could not save settlement"); // 401/403 redirect to sign-in
         return;
       }
+      draft.clear();
+      const saved = (await res.json().catch(() => null)) as { conflict?: boolean } | null;
       setAmount("");
       setNote("");
       await onChanged(); // pending list reflects the new settlement before we confirm
-      toast.success("Settlement recorded");
+      if (saved?.conflict) toast.info("This settlement was already recorded earlier. Check it in the list.");
+      else toast.success("Settlement recorded");
     } catch {
       toast.error("Could not save settlement. Check your connection and try again.");
     } finally {

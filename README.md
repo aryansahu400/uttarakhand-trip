@@ -21,7 +21,15 @@ connection string as sensitive, so it can't be pulled to a laptop — running mi
 
 To ship later changes: `npx vercel --prod` (or connect a GitHub repo in Vercel for auto-deploys).
 
+## Safe retries (no duplicate entries)
+Every new expense and settlement carries a `clientId` made on the phone. The server stores each id once: a retry
+(after a lost answer or a weak signal) gets `200` with the original row, a retry of an entry deleted since gets `410`,
+and a Naveen payment is never counted twice. Every API response carries `X-Trip-Api: 2`.
+
+**Rollback rule:** never roll production back (including Vercel *Instant Rollback*) to a deployment from before this
+feature. Older servers ignore `clientId`, so phones retrying saved entries would create duplicates. Fix forward instead.
+
 ## Other commands
-- `npm test` — balance / settle-up / Naveen cap checks
+- `npm test` — balance / settle-up / Naveen cap checks, plus the retry / duplicate checks (`scripts/test-offline.ts`)
 - `npm run db:generate` — create a migration after editing `db/schema.ts`
 - `NEXT_DIST_DIR=.next-build npm run build` — production build without disturbing a running `npm run dev`

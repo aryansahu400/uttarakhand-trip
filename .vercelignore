@@ -1,7 +1,7 @@
 node_modules
 .next
 .next-build
-.local-db
+.local-db*
 .env
 .env.local
 .claude

@@ -42,6 +42,8 @@ export type NewNaveenExpense = {
   naveenPayment: "direct" | "indirect";
   category: string;
   createdBy: string;
+  /** The phone's id for this entry (see lib/validate.ts clientId); null for saves without one. */
+  clientId?: string | null;
 };
 
 type ExecResult = { rows?: Record<string, unknown>[] } | Record<string, unknown>[];
@@ -57,14 +59,19 @@ const rowsOf = (r: unknown) => {
   return (Array.isArray(x) ? x : x.rows ?? []) as Record<string, unknown>[];
 };
 
-/** The conditional insert. Inserts nothing (returns no row) if anyone it charges would end above the cap. */
+/**
+ * The conditional insert. Inserts nothing (returns no row) if anyone it charges would end above the cap, or if a
+ * row with the same client id already exists (a retry of a save that already went through). The caller tells the
+ * two apart by looking the client id up afterwards (app/api/expenses/save.ts), so a retried payment is never
+ * stored twice and never reported as over the cap.
+ */
 export function naveenConditionalInsert(v: NewNaveenExpense, roster: readonly string[]): SQL {
   const rosterJson = JSON.stringify(roster);
   const splitJson = JSON.stringify(v.splitAmong);
   return sql`
-    INSERT INTO expenses (description, amount, date_time, paid_by, type, split_among, owed_to, naveen_payment, category, created_by)
+    INSERT INTO expenses (description, amount, date_time, paid_by, type, split_among, owed_to, naveen_payment, category, created_by, client_id)
     SELECT ${v.description}, ${v.amount}::numeric, ${v.dateTime.toISOString()}::timestamptz, ${v.paidBy}, 'trip',
-           ${splitJson}::jsonb, NULL, ${v.naveenPayment}, ${v.category}, ${v.createdBy}
+           ${splitJson}::jsonb, NULL, ${v.naveenPayment}, ${v.category}, ${v.createdBy}, ${v.clientId ?? null}::uuid
     WHERE NOT EXISTS (
       WITH RECURSIVE
       naveen_rows AS (                       -- every Naveen payment, plus the new one as rid 0
@@ -103,6 +110,7 @@ export function naveenConditionalInsert(v: NewNaveenExpense, roster: readonly st
        GROUP BY name
       HAVING sum(u) > ${NAVEEN_PER_PERSON_PAISE}::numeric * (SELECT l FROM scale)
     )
+    ON CONFLICT (client_id) DO NOTHING
     RETURNING id`;
 }
 

@@ -28,10 +28,11 @@ async function openLocal(): Promise<DB> {
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle: drizzlePglite } = await import("drizzle-orm/pglite");
   const { migrate } = await import("drizzle-orm/pglite/migrator");
-  const client = new PGlite(path.join(process.cwd(), ".local-db"));
+  // LOCAL_DB_DIR lets a local production test run use its own folder next to `npm run dev`.
+  const client = new PGlite(path.join(process.cwd(), process.env.LOCAL_DB_DIR || ".local-db"));
   const db = drizzlePglite(client, { schema });
   await migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
   await db.insert(schema.people).values(PEOPLE.map((name) => ({ name }))).onConflictDoNothing();
-  console.log("[db] Using local embedded Postgres at .local-db");
+  console.log(`[db] Using local embedded Postgres at ${process.env.LOCAL_DB_DIR || ".local-db"}`);
   return db as unknown as DB;
 }

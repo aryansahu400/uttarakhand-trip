@@ -12,6 +12,8 @@ export type Expense = {
   naveenPayment: "direct" | "indirect" | null;
   category: string;
   createdBy: string | null;
+  /** The phone's id for this entry (null for entries saved before offline support). */
+  clientId?: string | null;
 };
 export type Settlement = {
   id: number;
@@ -21,6 +23,7 @@ export type Settlement = {
   note: string | null;
   createdAt: string;
   createdBy: string | null;
+  clientId?: string | null;
 };
 
 /** AppShell's data refresh (onSaved / onChanged). Resolves once the new data is in state. */
